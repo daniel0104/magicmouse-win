@@ -1,6 +1,8 @@
 /*
  * driver.c - DriverEntry, device add, PnP/power callbacks, settings, VHF.
  */
+#include <ntddk.h>
+#include <initguid.h>       /* instantiate GUID_BTHDDI_PROFILE_DRIVER_INTERFACE in this file */
 #include "driver.h"
 
 EVT_WDF_DEVICE_PREPARE_HARDWARE        MmEvtPrepareHardware;

@@ -34,8 +34,12 @@
 
 #define MM_POOL_TAG             'fMgM'
 #define MM_MAX_CHANNELS         4
+#ifndef PSM_HID_CONTROL
 #define PSM_HID_CONTROL         0x0011
+#endif
+#ifndef PSM_HID_INTERRUPT
 #define PSM_HID_INTERRUPT       0x0013
+#endif
 #define MM_ENABLE_DELAY_MS      500     /* after the channels open, like Linux */
 #define MM_ENABLE_RETRY_MS      1000
 #define MM_HANDSHAKE_WINDOW_MS  2000

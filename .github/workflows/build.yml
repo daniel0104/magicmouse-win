@@ -38,9 +38,9 @@ jobs:
       - name: Build driver (x64, ARM64)
         shell: pwsh
         run: |
-          msbuild MagicMouseFlt.vcxproj /m /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off
+          msbuild MagicMouseFlt.vcxproj /m /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off /p:SkipInf=true
           if ($LASTEXITCODE -ne 0) { throw "x64 build failed" }
-          msbuild MagicMouseFlt.vcxproj /m /p:Configuration=Release /p:Platform=ARM64 /p:SignMode=Off
+          msbuild MagicMouseFlt.vcxproj /m /p:Configuration=Release /p:Platform=ARM64 /p:SignMode=Off /p:SkipInf=true
           if ($LASTEXITCODE -ne 0) { Write-Warning "ARM64 build failed - the installer will be x64 only" }
 
       - name: Sign driver packages
@@ -52,8 +52,12 @@ jobs:
                     Where-Object { Test-Path "$($_.FullName)\x64\signtool.exe" } | Select-Object -First 1
           $signtool = "$($kitVer.FullName)\x64\signtool.exe"
           $inf2cat  = "$($kitVer.FullName)\x86\Inf2Cat.exe"
+          $stampinf = "$($kitVer.FullName)\x64\stampinf.exe"
+          if (-not (Test-Path $stampinf)) { $stampinf = (Get-ChildItem $bin -Recurse -Filter stampinf.exe | Select-Object -First 1).FullName }
           if (-not (Test-Path $inf2cat)) { $inf2cat = (Get-ChildItem $bin -Recurse -Filter Inf2Cat.exe | Select-Object -First 1).FullName }
-          Write-Host "signtool: $signtool"; Write-Host "inf2cat: $inf2cat"
+          Write-Host "signtool: $signtool"; Write-Host "inf2cat: $inf2cat"; Write-Host "stampinf: $stampinf"
+          $parts = "${{ steps.ver.outputs.version }}".Split('.') + @('0', '0', '0')
+          $infVersion = ($parts[0..3] -join '.')
 
           # Throwaway signing certificate: its private key exists only on this
           # build machine and is gone when the job ends.
@@ -63,8 +67,8 @@ jobs:
           New-Item -ItemType Directory -Force stage | Out-Null
 
           $targets = @(
-            @{ Platform = 'x64';   Dir = 'x64';   Os = @('10_RS3_X64', '10_X64') },
-            @{ Platform = 'ARM64'; Dir = 'arm64'; Os = @('10_RS3_ARM64', '10_RS4_ARM64', '10_ARM64') }
+            @{ Platform = 'x64';   Dir = 'x64';   Arch = 'amd64'; Os = @('10_RS3_X64', '10_X64') },
+            @{ Platform = 'ARM64'; Dir = 'arm64'; Arch = 'arm64'; Os = @('10_RS3_ARM64', '10_RS4_ARM64', '10_ARM64') }
           )
           foreach ($t in $targets) {
             $out = Join-Path $PWD "$($t.Platform)\Release"
@@ -73,13 +77,12 @@ jobs:
               if ($t.Platform -eq 'x64') { throw "x64 MagicMouseFlt.sys not found" }
               Write-Warning "Skipping $($t.Platform)"; continue
             }
-            $inf = Get-ChildItem $out -Recurse -Filter MagicMouseFlt.inf | Where-Object {
-                     (Get-Content $_.FullName -Raw) -notmatch '\$KMDFVERSION\$' } | Select-Object -First 1
-            if (-not $inf) { throw "Stamped INF not found for $($t.Platform)" }
-
             $dst = Join-Path $PWD "stage\$($t.Dir)"
             New-Item -ItemType Directory -Force $dst | Out-Null
-            Copy-Item $sys.FullName, $inf.FullName $dst
+            Copy-Item $sys.FullName, MagicMouseFlt.inf $dst
+            & $stampinf -f "$dst\MagicMouseFlt.inf" -d * -a $t.Arch -v $infVersion -k 1.15
+            if ($LASTEXITCODE -ne 0) { throw "stampinf failed" }
+            if ((Get-Content "$dst\MagicMouseFlt.inf" -Raw) -match '\$(ARCH|KMDFVERSION)\$') { throw "INF not fully stamped" }
             Export-Certificate -Cert $cert -FilePath "$dst\MagicMouseFlt.cer" | Out-Null
 
             & $signtool sign /fd sha256 /sha1 $cert.Thumbprint /s My "$dst\MagicMouseFlt.sys"

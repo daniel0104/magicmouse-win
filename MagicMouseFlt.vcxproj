@@ -92,7 +92,8 @@
     <ClInclude Include="src\mmproto.h" />
     <ClInclude Include="src\mmtypes.h" />
   </ItemGroup>
-  <ItemGroup>
+  <!-- CI passes /p:SkipInf=true and stamps the INF itself (InfVerif is broken on hosted runners). -->
+  <ItemGroup Condition="'$(SkipInf)' != 'true'">
     <Inf Include="MagicMouseFlt.inf" />
   </ItemGroup>
   <ItemGroup>
