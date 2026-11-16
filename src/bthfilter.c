@@ -171,22 +171,29 @@ MmEvtIoInternalDeviceControl(_In_ WDFQUEUE Queue, _In_ WDFREQUEST Request,
             return;
         }
 
-        /* Outgoing: a HID control transaction tells us which channel is control. */
+        /* Outgoing traffic reveals the control channel and the mouse address.
+           Anything HidBth sends on a channel that isn't the interrupt channel is
+           on the control channel - this is how we recover the handle when we
+           attached to a connection that was already open (no OPEN_CHANNEL seen). */
         MM_STAT_INC(ctx, AclOut);
-        if (acl->BufferSize >= 1) {
-            PUCHAR data = MmAclBuffer(acl);
+        {
+            PUCHAR data = (acl->BufferSize >= 1) ? MmAclBuffer(acl) : NULL;
+            BOOLEAN isControl = FALSE;
             if (data != NULL) {
                 UCHAR type = data[0] & 0xF0;
                 if (type == HIDP_HID_CONTROL || type == HIDP_GET_REPORT || type == HIDP_SET_REPORT ||
                     type == HIDP_GET_PROTOCOL || type == HIDP_SET_PROTOCOL) {
-                    WdfSpinLockAcquire(ctx->Lock);
-                    if (acl->BtAddress != 0) {
-                        ctx->BtAddress = acl->BtAddress;
-                    }
-                    (VOID)MmAddChannelLocked(ctx, acl->ChannelHandle, PSM_HID_CONTROL);
-                    WdfSpinLockRelease(ctx->Lock);
+                    isControl = TRUE;
                 }
             }
+            WdfSpinLockAcquire(ctx->Lock);
+            if (acl->BtAddress != 0) {
+                ctx->BtAddress = acl->BtAddress;
+            }
+            if (isControl || (ctx->InterruptChannel != NULL && acl->ChannelHandle != ctx->InterruptChannel)) {
+                (VOID)MmAddChannelLocked(ctx, acl->ChannelHandle, PSM_HID_CONTROL);
+            }
+            WdfSpinLockRelease(ctx->Lock);
         }
         break;
     }
@@ -425,6 +432,11 @@ MmAclInComplete(_In_ WDFREQUEST Request, _In_ WDFIOTARGET Target,
     if (NT_SUCCESS(status)) {
         PUCHAR data = MmAclBuffer(acl);
         MM_STAT_INC(ctx, AclIn);
+        if (acl->BtAddress != 0 && ctx->BtAddress == 0) {
+            WdfSpinLockAcquire(ctx->Lock);
+            ctx->BtAddress = acl->BtAddress;
+            WdfSpinLockRelease(ctx->Lock);
+        }
         ULONG length = (acl->RemainingBufferSize <= acl->BufferSize)
                            ? acl->BufferSize - acl->RemainingBufferSize
                            : 0;
