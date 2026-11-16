@@ -85,6 +85,7 @@
     <ClCompile Include="src\bthfilter.c" />
     <ClCompile Include="src\gesture.c" />
     <ClCompile Include="src\mmproto.c" />
+    <ClCompile Include="src\stats.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\driver.h" />

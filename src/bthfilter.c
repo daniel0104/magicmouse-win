@@ -143,6 +143,7 @@ MmEvtIoInternalDeviceControl(_In_ WDFQUEUE Queue, _In_ WDFREQUEST Request,
     UNREFERENCED_PARAMETER(InputBufferLength);
 
     if (IoControlCode != IOCTL_INTERNAL_BTH_SUBMIT_BRB) {
+        MM_STAT_INC(ctx, OtherIoctls);
         MmPassThrough(ctx, Request);
         return;
     }
@@ -155,6 +156,8 @@ MmEvtIoInternalDeviceControl(_In_ WDFQUEUE Queue, _In_ WDFREQUEST Request,
         return;
     }
     rc->Brb = brb;
+    MM_STAT_INC(ctx, Brbs);
+    MmStatsNoteBrbType(ctx, brb->BrbHeader.Type);
 
     switch (brb->BrbHeader.Type) {
 
@@ -169,6 +172,7 @@ MmEvtIoInternalDeviceControl(_In_ WDFQUEUE Queue, _In_ WDFREQUEST Request,
         }
 
         /* Outgoing: a HID control transaction tells us which channel is control. */
+        MM_STAT_INC(ctx, AclOut);
         if (acl->BufferSize >= 1) {
             PUCHAR data = MmAclBuffer(acl);
             if (data != NULL) {
@@ -202,6 +206,7 @@ MmEvtIoInternalDeviceControl(_In_ WDFQUEUE Queue, _In_ WDFREQUEST Request,
         BOOLEAN lostInterrupt = FALSE;
         ULONG i;
 
+        MM_STAT_INC(ctx, Closes);
         WdfSpinLockAcquire(ctx->Lock);
         for (i = 0; i < MM_MAX_CHANNELS; i++) {
             if (ctx->Channels[i].Handle == handle) {
@@ -254,6 +259,7 @@ MmOpenChannelComplete(_In_ WDFREQUEST Request, _In_ WDFIOTARGET Target,
                 ctx->BtAddress = oc->BtAddress;
             }
             count = MmAddChannelLocked(ctx, oc->ChannelHandle, rc->Psm);
+            MM_STAT_INC(ctx, Opens);
             ctx->MultitouchActive = FALSE;      /* new connection: mouse starts in legacy mode */
             WdfSpinLockRelease(ctx->Lock);
 
@@ -297,12 +303,27 @@ MmHandleIncoming(_In_ PDEVICE_CONTEXT Ctx, _In_ L2CAP_CHANNEL_HANDLE Channel,
             now - Ctx->LastEnableMs <= MM_HANDSHAKE_WINDOW_MS) {
             Ctx->ExpectHandshake = FALSE;
             action = MM_SWALLOW;
+            Ctx->Stats.LastHandshake = Data[0] & 0x0F;
+            MM_STAT_INC(Ctx, Handshakes);
         }
         WdfSpinLockRelease(Ctx->Lock);
         if (action == MM_SWALLOW) {
             MMLOG("multitouch enable handshake result %u\n", (unsigned)(Data[0] & 0x0F));
         }
         return action;
+    }
+
+    if (Data[0] == (HIDP_DATA | HIDP_REPORT_INPUT) && Length >= 2) {
+        ULONG n = MM_MIN(Length, (ULONG)sizeof(Ctx->Stats.LastInput));
+        RtlCopyMemory(Ctx->Stats.LastInput, Data, n);
+        Ctx->Stats.LastInputLen = (LONG)Length;
+        InterlockedIncrement(&Ctx->Stats.ReportIds[Data[1]]);
+        MM_STAT_INC(Ctx, InputReports);
+    } else {
+        ULONG n = MM_MIN(Length, (ULONG)sizeof(Ctx->Stats.LastControlIn));
+        RtlCopyMemory(Ctx->Stats.LastControlIn, Data, n);
+        Ctx->Stats.LastControlInLen = (LONG)Length;
+        InterlockedIncrement(&Ctx->Stats.Version);
     }
 
     if (Data[0] != (HIDP_DATA | HIDP_REPORT_INPUT) || Length < 2 || !Ctx->VhfStarted) {
@@ -403,12 +424,14 @@ MmAclInComplete(_In_ WDFREQUEST Request, _In_ WDFIOTARGET Target,
 
     if (NT_SUCCESS(status)) {
         PUCHAR data = MmAclBuffer(acl);
+        MM_STAT_INC(ctx, AclIn);
         ULONG length = (acl->RemainingBufferSize <= acl->BufferSize)
                            ? acl->BufferSize - acl->RemainingBufferSize
                            : 0;
 
         if (data != NULL && length > 0 &&
             MmHandleIncoming(ctx, acl->ChannelHandle, data, length) == MM_SWALLOW) {
+            MM_STAT_INC(ctx, Swallowed);
             /* Hand the same read back to the Bluetooth stack for the next packet. */
             acl->BufferSize = rc->OrigBufferSize;
             acl->RemainingBufferSize = rc->OrigRemaining;
@@ -491,6 +514,7 @@ static VOID MmMaybeEnableMultitouch(_In_ PDEVICE_CONTEXT Ctx)
     WdfSpinLockRelease(Ctx->Lock);
 
     MMLOG("sending multitouch enable (model %d, %lu bytes)\n", (int)model, length);
+    MM_STAT_INC(Ctx, EnableSent);
     if (!WdfRequestSend(Ctx->FeatureRequest, Ctx->Target, WDF_NO_SEND_OPTIONS)) {
         WdfSpinLockAcquire(Ctx->Lock);
         Ctx->ExpectHandshake = FALSE;
@@ -510,11 +534,28 @@ MmFeatureComplete(_In_ WDFREQUEST Request, _In_ WDFIOTARGET Target,
 
     if (!NT_SUCCESS(Params->IoStatus.Status)) {
         MMLOG("multitouch enable send failed 0x%08X\n", Params->IoStatus.Status);
+        MM_STAT_INC(ctx, EnableFailed);
         WdfSpinLockAcquire(ctx->Lock);
         ctx->ExpectHandshake = FALSE;
         WdfSpinLockRelease(ctx->Lock);
     }
+    ctx->Stats.LastEnableStatus = Params->IoStatus.Status;
     InterlockedExchange(&ctx->FeatureInFlight, 0);
+}
+
+VOID MmStatsNoteBrbType(_In_ PDEVICE_CONTEXT Ctx, _In_ USHORT Type)
+{
+    LONG i, n = MM_MIN(Ctx->Stats.BrbTypeCount, 16);
+
+    for (i = 0; i < n; i++) {
+        if (Ctx->Stats.BrbTypes[i] == Type) {
+            return;
+        }
+    }
+    i = InterlockedIncrement(&Ctx->Stats.BrbTypeCount) - 1;
+    if (i < 16) {
+        Ctx->Stats.BrbTypes[i] = Type;
+    }
 }
 
 VOID MmEvtEnableTimer(_In_ WDFTIMER Timer)

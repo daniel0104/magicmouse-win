@@ -56,6 +56,26 @@ typedef struct _MM_CHANNEL {
     USHORT               Psm;           /* 0 = not known yet */
 } MM_CHANNEL;
 
+/* Diagnostic counters, written to ...\MagicMouseFlt\Parameters\Status every 2 s
+   (volatile key) and read by tools/Diagnose.ps1. */
+typedef struct _MM_STATS {
+    volatile LONG Version;
+    volatile LONG Brbs, AclIn, AclOut, Opens, Closes, OtherIoctls;
+    volatile LONG InputReports, Swallowed, VhfReports, VhfSubmitFailed;
+    volatile LONG EnableSent, EnableFailed, Handshakes, LastHandshake;
+    NTSTATUS QiStatus, VhfCreateStatus, VhfStartStatus, LastEnableStatus, LastVhfSubmitStatus;
+    volatile LONG ReportIds[256];
+    USHORT   BrbTypes[16];
+    volatile LONG BrbTypeCount;
+    UCHAR    LastInput[48];
+    volatile LONG LastInputLen;
+    UCHAR    LastControlIn[16];
+    volatile LONG LastControlInLen;
+} MM_STATS;
+
+#define MM_STAT_INC(ctx, f) do { InterlockedIncrement(&(ctx)->Stats.f); InterlockedIncrement(&(ctx)->Stats.Version); } while (0)
+#define MM_STAT_SET(ctx, f, v) do { (ctx)->Stats.f = (v); InterlockedIncrement(&(ctx)->Stats.Version); } while (0)
+
 typedef struct _DEVICE_CONTEXT {
     WDFDEVICE           Device;
     WDFIOTARGET         Target;
@@ -91,6 +111,12 @@ typedef struct _DEVICE_CONTEXT {
     /* Virtual HID mouse */
     VHFHANDLE           Vhf;
     volatile BOOLEAN    VhfStarted;
+
+    /* Diagnostics */
+    MM_STATS            Stats;
+    LONG                StatsWritten;
+    WDFTIMER            StatsTimer;
+    WDFWORKITEM         StatsWorkItem;
 } DEVICE_CONTEXT, *PDEVICE_CONTEXT;
 
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(DEVICE_CONTEXT, MmGetContext)
@@ -114,4 +140,9 @@ VOID MmSubmitReport(_In_ PDEVICE_CONTEXT Ctx, _In_reads_(MM_REPORT_LEN) PUCHAR R
 EVT_WDF_IO_QUEUE_IO_INTERNAL_DEVICE_CONTROL MmEvtIoInternalDeviceControl;
 EVT_WDF_TIMER MmEvtEnableTimer;
 EVT_WDF_TIMER MmEvtInertiaTimer;
+VOID MmStatsNoteBrbType(_In_ PDEVICE_CONTEXT Ctx, _In_ USHORT Type);
+
+/* stats.c */
+EVT_WDF_TIMER MmEvtStatsTimer;
+EVT_WDF_WORKITEM MmEvtStatsWorkItem;
 VOID MmResetConnectionState(_In_ PDEVICE_CONTEXT Ctx);

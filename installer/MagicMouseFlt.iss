@@ -39,6 +39,7 @@ Source: "..\tools\Install.ps1";               DestDir: "{app}"; Flags: ignorever
 Source: "..\tools\Uninstall.ps1";             DestDir: "{app}"; Flags: ignoreversion
 Source: "..\tools\MagicMouseSettings.ps1";    DestDir: "{app}"; Flags: ignoreversion
 Source: "..\tools\Set-MagicMouseOptions.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\tools\Diagnose.ps1";            DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md";                       DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
@@ -47,6 +48,8 @@ Name: "{group}\Magic Mouse Settings"; Filename: "{sys}\WindowsPowerShell\v1.0\po
   IconFilename: "{sys}\main.cpl"
 Name: "{group}\Repair Magic Mouse Driver (after re-pairing)"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
   Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\Install.ps1"" -PackageDir ""{app}\driver"" -StateDir ""{app}"" -ShowResult"
+Name: "{group}\Magic Mouse Diagnostics"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\Diagnose.ps1"""
 Name: "{group}\Uninstall Magic Mouse Driver"; Filename: "{uninstallexe}"
 
 [Run]

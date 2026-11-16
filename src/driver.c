@@ -235,6 +235,25 @@ MmEvtDeviceAdd(_In_ WDFDRIVER Driver, _Inout_ PWDFDEVICE_INIT DeviceInit)
         return status;
     }
 
+    {
+        WDF_WORKITEM_CONFIG workConfig;
+
+        WDF_TIMER_CONFIG_INIT_PERIODIC(&timerConfig, MmEvtStatsTimer, 2000);
+        WDF_OBJECT_ATTRIBUTES_INIT(&attr);
+        attr.ParentObject = device;
+        status = WdfTimerCreate(&timerConfig, &attr, &ctx->StatsTimer);
+        if (!NT_SUCCESS(status)) {
+            return status;
+        }
+        WDF_WORKITEM_CONFIG_INIT(&workConfig, MmEvtStatsWorkItem);
+        WDF_OBJECT_ATTRIBUTES_INIT(&attr);
+        attr.ParentObject = device;
+        status = WdfWorkItemCreate(&workConfig, &attr, &ctx->StatsWorkItem);
+        if (!NT_SUCCESS(status)) {
+            return status;
+        }
+    }
+
     /* Virtual HID mouse. vhf.sys sits below us (see the INF). If this fails the
        filter stays a pure pass-through and the mouse works as before. */
     VHF_CONFIG_INIT(&vhfConfig, WdfDeviceWdmGetDeviceObject(device),
@@ -246,6 +265,7 @@ MmEvtDeviceAdd(_In_ WDFDRIVER Driver, _Inout_ PWDFDEVICE_INIT DeviceInit)
     vhfConfig.ProductID = 0x0001;
     vhfConfig.VersionNumber = 0x0100;
     status = VhfCreate(&vhfConfig, &ctx->Vhf);
+    MM_STAT_SET(ctx, VhfCreateStatus, status);
     if (!NT_SUCCESS(status)) {
         MMLOG("VhfCreate failed 0x%08X - running as pass-through\n", status);
         ctx->Vhf = NULL;
@@ -271,6 +291,7 @@ MmEvtPrepareHardware(_In_ WDFDEVICE Device, _In_ WDFCMRESLIST Raw, _In_ WDFCMRES
         status = WdfFdoQueryForInterface(Device, &GUID_BTHDDI_PROFILE_DRIVER_INTERFACE,
                                          (PINTERFACE)&ctx->BthIf, sizeof(ctx->BthIf),
                                          BTHDDI_PROFILE_DRIVER_INTERFACE_VERSION_FOR_QI, NULL);
+        MM_STAT_SET(ctx, QiStatus, status);
         if (NT_SUCCESS(status)) {
             ctx->BthIfValid = TRUE;
         } else {
@@ -306,6 +327,8 @@ MmEvtD0Exit(_In_ WDFDEVICE Device, _In_ WDF_POWER_DEVICE_STATE TargetState)
 
     WdfTimerStop(ctx->EnableTimer, TRUE);
     WdfTimerStop(ctx->InertiaTimer, TRUE);
+    WdfTimerStop(ctx->StatsTimer, TRUE);
+    WdfWorkItemFlush(ctx->StatsWorkItem);
     if (InterlockedCompareExchange(&ctx->FeatureInFlight, 0, 0) != 0) {
         WdfRequestCancelSentRequest(ctx->FeatureRequest);
     }
@@ -322,8 +345,10 @@ MmEvtSelfManagedIoInit(_In_ WDFDEVICE Device)
     PAGED_CODE();
 
     MmLoadSettings(ctx);
+    WdfTimerStart(ctx->StatsTimer, WDF_REL_TIMEOUT_IN_MS(500));
     if (ctx->Vhf != NULL) {
         status = VhfStart(ctx->Vhf);
+        MM_STAT_SET(ctx, VhfStartStatus, status);
         if (NT_SUCCESS(status)) {
             ctx->VhfStarted = TRUE;
             MMLOG("virtual mouse started\n");
@@ -339,6 +364,7 @@ MmEvtSelfManagedIoRestart(_In_ WDFDEVICE Device)
 {
     PAGED_CODE();
     MmLoadSettings(MmGetContext(Device));
+    WdfTimerStart(MmGetContext(Device)->StatsTimer, WDF_REL_TIMEOUT_IN_MS(500));
     return STATUS_SUCCESS;
 }
 
@@ -362,6 +388,7 @@ MmEvtSelfManagedIoCleanup(_In_ WDFDEVICE Device)
 VOID MmSubmitReport(_In_ PDEVICE_CONTEXT Ctx, _In_reads_(MM_REPORT_LEN) PUCHAR Report)
 {
     HID_XFER_PACKET packet;
+    NTSTATUS status;
 
     if (!Ctx->VhfStarted) {
         return;
@@ -369,7 +396,13 @@ VOID MmSubmitReport(_In_ PDEVICE_CONTEXT Ctx, _In_reads_(MM_REPORT_LEN) PUCHAR R
     packet.reportBuffer = Report;
     packet.reportBufferLen = MM_REPORT_LEN;
     packet.reportId = Report[0];
-    (VOID)VhfReadReportSubmit(Ctx->Vhf, &packet);
+    status = VhfReadReportSubmit(Ctx->Vhf, &packet);
+    if (NT_SUCCESS(status)) {
+        MM_STAT_INC(Ctx, VhfReports);
+    } else {
+        Ctx->Stats.LastVhfSubmitStatus = status;
+        MM_STAT_INC(Ctx, VhfSubmitFailed);
+    }
 }
 
 /* Feature report 1 = resolution multipliers: bits 0-1 wheel, bits 2-3 pan. */
