@@ -5,7 +5,7 @@
  * HID control channel handle. On the 2024 USB-C Magic Mouse that channel is
  * never opened through this filter (it attaches to a live connection), so the
  * handle can't be learned. Instead we hand the feature report to Windows' HID
- * stack: we open the device's own HID collection and send IOCTL_HID_SET_FEATURE.
+ * stack: we open the device's own HID collection and send MM_IOCTL_HID_SET_FEATURE.
  * HidBth, which does know the control channel, puts it on the wire for us. The
  * request travels back down through this filter as an outgoing ACL transfer,
  * which we simply pass through.
@@ -15,7 +15,7 @@
  *   Magic Mouse 2 / USB-C (004C:0269/0323): F1 02 01
  */
 #include "driver.h"
-#include <hidclass.h>
+#include "hidmini.h"
 
 #define MM_VID_APPLE_USB   0x05AC
 #define MM_VID_APPLE_BT    0x004C
@@ -45,7 +45,7 @@ static BOOLEAN MmEnableOneCollection(_In_ PDEVICE_CONTEXT Ctx, _In_ PUNICODE_STR
     WDF_IO_TARGET_OPEN_PARAMS openParams;
     WDFIOTARGET target = NULL;
     WDF_MEMORY_DESCRIPTOR desc;
-    HID_COLLECTION_INFORMATION info;
+    MM_HID_COLLECTION_INFORMATION info;
     UCHAR enableBuf[4] = { 0 };
     ULONG enableLen = 0;
     NTSTATUS status;
@@ -70,7 +70,7 @@ static BOOLEAN MmEnableOneCollection(_In_ PDEVICE_CONTEXT Ctx, _In_ PUNICODE_STR
 
     RtlZeroMemory(&info, sizeof(info));
     WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&desc, &info, sizeof(info));
-    status = WdfIoTargetSendIoctlSynchronously(target, NULL, IOCTL_HID_GET_COLLECTION_INFORMATION,
+    status = WdfIoTargetSendIoctlSynchronously(target, NULL, MM_IOCTL_HID_GET_COLLECTION_INFORMATION,
                                                NULL, &desc, NULL, NULL);
     Ctx->Stats.LastHidInfoStatus = status;
     if (!NT_SUCCESS(status)) {
@@ -85,10 +85,10 @@ static BOOLEAN MmEnableOneCollection(_In_ PDEVICE_CONTEXT Ctx, _In_ PUNICODE_STR
     Ctx->Stats.LastHidVidPid = ((LONG)info.VendorID << 16) | info.ProductID;
     MM_STAT_SET(Ctx, LastHidVidPid, Ctx->Stats.LastHidVidPid);
 
-    /* IOCTL_HID_SET_FEATURE carries the report (report ID first) in the output
+    /* MM_IOCTL_HID_SET_FEATURE carries the report (report ID first) in the output
        buffer (the IOCTL is METHOD_IN_DIRECT). */
     WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&desc, enableBuf, enableLen);
-    status = WdfIoTargetSendIoctlSynchronously(target, NULL, IOCTL_HID_SET_FEATURE,
+    status = WdfIoTargetSendIoctlSynchronously(target, NULL, MM_IOCTL_HID_SET_FEATURE,
                                                NULL, &desc, NULL, NULL);
     Ctx->Stats.LastHidSetFeatureStatus = status;
     if (NT_SUCCESS(status)) {
@@ -123,7 +123,7 @@ VOID MmEvtEnableWorkItem(_In_ WDFWORKITEM WorkItem)
 
     /* All HID collections currently present. The device's own collections are
        among them; we match ours by Apple VID/PID rather than by instance path. */
-    status = IoGetDeviceInterfaces((LPGUID)&GUID_DEVINTERFACE_HID, NULL, 0, &list);
+    status = IoGetDeviceInterfaces((LPGUID)&MM_GUID_DEVINTERFACE_HID, NULL, 0, &list);
     ctx->Stats.LastHidEnumStatus = status;
     if (!NT_SUCCESS(status) || list == NULL) {
         InterlockedExchange(&ctx->EnableInProgress, 0);
