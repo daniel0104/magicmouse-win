@@ -57,47 +57,58 @@ public static class Hid2 {
 Add-Type -TypeDefinition $cs -ErrorAction Stop
 $GENERIC_RW = 0xC0000000; $GENERIC_READ = 0x80000000; $SHARE_RW = 3; $OPEN = 3
 
-# Find the openable Magic Mouse (PID 0323) vendor collection.
-$target = $null
-foreach ($path in [Hid2]::Paths()) {
-    $h = [Hid2]::CreateFile($path, $GENERIC_RW, $SHARE_RW, [IntPtr]::Zero, $OPEN, 0, [IntPtr]::Zero)
-    if ($h.IsInvalid) { $h = [Hid2]::CreateFile($path, $GENERIC_READ, $SHARE_RW, [IntPtr]::Zero, $OPEN, 0, [IntPtr]::Zero) }
-    if ($h.IsInvalid) { continue }
-    $a = New-Object Hid2+HIDD_ATTRIBUTES; $a.Size = [Runtime.InteropServices.Marshal]::SizeOf($a)
-    [void][Hid2]::HidD_GetAttributes($h, [ref]$a)
-    if ($a.VendorID -eq 0x004C -and $a.ProductID -eq 0x0323) {
-        $caps = New-Object Hid2+HIDP_CAPS; $pp = [IntPtr]::Zero
-        if ([Hid2]::HidD_GetPreparsedData($h, [ref]$pp)) { [void][Hid2]::HidP_GetCaps($pp, [ref]$caps); [void][Hid2]::HidD_FreePreparsedData($pp) }
-        $target = [pscustomobject]@{ Path = $path; In = [int]$caps.InputReportByteLength; Feat = [int]$caps.FeatureReportByteLength; Handle = $h }
-        Write-Host ("Found Magic Mouse vendor collection: in={0} feat={1}" -f $caps.InputReportByteLength, $caps.FeatureReportByteLength)
-        break
-    }
-    $h.Close()
+function Try-Open($path, $access) {
+    $h = [Hid2]::CreateFile($path, $access, $SHARE_RW, [IntPtr]::Zero, $OPEN, 0, [IntPtr]::Zero)
+    if ($h.IsInvalid) { return @{ h = $null; err = [Runtime.InteropServices.Marshal]::GetLastWin32Error() } }
+    return @{ h = $h; err = 0 }
 }
-if (-not $target) { Write-Host 'Magic Mouse (PID 0323) openable collection not found. Is it on?'; return }
+
+$all = [Hid2]::Paths()
+Write-Host ("{0} HID collections present." -f $all.Count)
+$mm = $all | Where-Object { $_ -match '0001004c_pid&0323' }
+if (-not $mm) {
+    Write-Host 'No PID 0323 (Magic Mouse) HID path present at all. The mouse may be asleep/disconnected.'
+    Write-Host 'Move it and re-run. (These are the paths I did see:)'
+    $all | ForEach-Object { Write-Host "   $_" }
+    return
+}
+
+Write-Host ''
+Write-Host 'Magic Mouse (PID 0323) collection paths:'
+$target = $null
+foreach ($path in $mm) {
+    $r = Try-Open $path $GENERIC_READ
+    if (-not $r.h) { $r = Try-Open $path $GENERIC_RW }
+    if (-not $r.h) { $r = Try-Open $path 0 }
+    if ($r.h) {
+        $a = New-Object Hid2+HIDD_ATTRIBUTES; $a.Size = [Runtime.InteropServices.Marshal]::SizeOf($a)
+        [void][Hid2]::HidD_GetAttributes($r.h, [ref]$a)
+        $caps = New-Object Hid2+HIDP_CAPS; $pp = [IntPtr]::Zero
+        if ([Hid2]::HidD_GetPreparsedData($r.h, [ref]$pp)) { [void][Hid2]::HidP_GetCaps($pp, [ref]$caps); [void][Hid2]::HidD_FreePreparsedData($pp) }
+        Write-Host ("  [open] usage {0:X4}:{1:X2} in={2} feat={3}  {4}" -f $caps.UsagePage, $caps.Usage, $caps.InputReportByteLength, $caps.FeatureReportByteLength, $path)
+        if (-not $target -and $caps.InputReportByteLength -ge 2) {
+            $target = [pscustomobject]@{ Handle = $r.h; In = [int]$caps.InputReportByteLength; Feat = [int]$caps.FeatureReportByteLength }
+        } else { $r.h.Close() }
+    } else {
+        Write-Host ("  [cannot open, err {0}]  {1}" -f $r.err, $path)
+    }
+}
+if (-not $target) { Write-Host ''; Write-Host 'Could not open any 0323 collection for reading (see errors above).'; return }
 
 Write-Host ''
 Write-Host 'Baiting control-channel traffic for ~10 seconds.'
-Write-Host '>>> Keep swiping and moving the mouse the whole time, and try to scroll. <<<'
+Write-Host '>>> Keep swiping and moving the mouse, and try to scroll. <<<'
 Start-Sleep 1
-
 $okGet = 0; $okFeat = 0; $tries = 0
 $deadline = (Get-Date).AddSeconds(10)
 while ((Get-Date) -lt $deadline) {
     $tries++
-    # GET input report 0x90 (battery): forces a GET_REPORT on the control channel.
     $buf = New-Object byte[] ([Math]::Max($target.In, 3)); $buf[0] = 0x90
     if ([Hid2]::HidD_GetInputReport($target.Handle, $buf, $buf.Length)) { $okGet++ }
-    # Also try a feature GET on report 0x55 if the collection has features.
-    if ($target.Feat -ge 2) {
-        $fb = New-Object byte[] $target.Feat; $fb[0] = 0x55
-        if ([Hid2]::HidD_GetFeature($target.Handle, $fb, $fb.Length)) { $okFeat++ }
-    }
+    if ($target.Feat -ge 2) { $fb = New-Object byte[] $target.Feat; $fb[0] = 0x55; if ([Hid2]::HidD_GetFeature($target.Handle, $fb, $fb.Length)) { $okFeat++ } }
     Start-Sleep -Milliseconds 400
 }
 $target.Handle.Close()
-
 Write-Host ''
 Write-Host ("Done. GetInputReport ok {0}/{1}, GetFeature ok {2}." -f $okGet, $tries, $okFeat)
-Write-Host 'Now: did scrolling start working? Either way, run "Magic Mouse Diagnostics"'
-Write-Host 'and send the file. The key line is ControlKnown (1 = the bait worked).'
+Write-Host 'Did scrolling start? Either way run "Magic Mouse Diagnostics" and send the file (watch ControlKnown).'
