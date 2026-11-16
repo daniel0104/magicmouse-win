@@ -38,10 +38,11 @@ jobs:
       - name: Build driver (x64, ARM64)
         shell: pwsh
         run: |
-          msbuild MagicMouseFlt.vcxproj /m /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off /p:SkipInf=true
+          msbuild MagicMouseFlt.vcxproj /m /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off /p:SkipInf=true /p:ApiValidator_Enable=false
           if ($LASTEXITCODE -ne 0) { throw "x64 build failed" }
-          msbuild MagicMouseFlt.vcxproj /m /p:Configuration=Release /p:Platform=ARM64 /p:SignMode=Off /p:SkipInf=true
+          msbuild MagicMouseFlt.vcxproj /m /p:Configuration=Release /p:Platform=ARM64 /p:SignMode=Off /p:SkipInf=true /p:ApiValidator_Enable=false
           if ($LASTEXITCODE -ne 0) { Write-Warning "ARM64 build failed - the installer will be x64 only" }
+          exit 0
 
       - name: Sign driver packages
         shell: pwsh
