@@ -55,7 +55,7 @@ public static class Hid2 {
 }
 '@
 Add-Type -TypeDefinition $cs -ErrorAction Stop
-$GENERIC_RW = 0xC0000000; $GENERIC_READ = 0x80000000; $SHARE_RW = 3; $OPEN = 3
+$GENERIC_RW = [uint32]3221225472; $GENERIC_READ = [uint32]2147483648; $SHARE_RW = [uint32]3; $OPEN = [uint32]3
 
 function Try-Open($path, $access) {
     $h = [Hid2]::CreateFile($path, $access, $SHARE_RW, [IntPtr]::Zero, $OPEN, 0, [IntPtr]::Zero)
