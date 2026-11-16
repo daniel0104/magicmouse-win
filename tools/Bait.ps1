@@ -55,12 +55,13 @@ public static class Hid2 {
 }
 '@
 Add-Type -TypeDefinition $cs -ErrorAction Stop
-$GENERIC_RW = 0xC0000000; $SHARE_RW = 3; $OPEN = 3
+$GENERIC_RW = 0xC0000000; $GENERIC_READ = 0x80000000; $SHARE_RW = 3; $OPEN = 3
 
 # Find the openable Magic Mouse (PID 0323) vendor collection.
 $target = $null
 foreach ($path in [Hid2]::Paths()) {
     $h = [Hid2]::CreateFile($path, $GENERIC_RW, $SHARE_RW, [IntPtr]::Zero, $OPEN, 0, [IntPtr]::Zero)
+    if ($h.IsInvalid) { $h = [Hid2]::CreateFile($path, $GENERIC_READ, $SHARE_RW, [IntPtr]::Zero, $OPEN, 0, [IntPtr]::Zero) }
     if ($h.IsInvalid) { continue }
     $a = New-Object Hid2+HIDD_ATTRIBUTES; $a.Size = [Runtime.InteropServices.Marshal]::SizeOf($a)
     [void][Hid2]::HidD_GetAttributes($h, [ref]$a)
