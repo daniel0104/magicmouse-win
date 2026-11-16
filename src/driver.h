@@ -139,11 +139,17 @@ typedef struct _DEVICE_CONTEXT {
 
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(DEVICE_CONTEXT, MmGetContext)
 
+#define MM_READ_BUF_SIZE  176           /* fits 14 + 8*20 touch report */
+
 typedef struct _REQUEST_CONTEXT {
     PBRB    Brb;
     ULONG   OrigBufferSize;
     ULONG   OrigRemaining;
     USHORT  Psm;                        /* saved before send: shares a union with Response */
+    BOOLEAN Substituted;                /* we swapped in our own larger read buffer */
+    PVOID   OrigBuffer;
+    PMDL    OrigBufferMDL;
+    UCHAR   BigBuf[MM_READ_BUF_SIZE];
 } REQUEST_CONTEXT, *PREQUEST_CONTEXT;
 
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(REQUEST_CONTEXT, MmGetRequestContext)

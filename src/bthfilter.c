@@ -164,8 +164,20 @@ MmEvtIoInternalDeviceControl(_In_ WDFQUEUE Queue, _In_ WDFREQUEST Request,
         struct _BRB_L2CA_ACL_TRANSFER *acl = &brb->BrbL2caAclTransfer;
 
         if (acl->TransferFlags & ACL_TRANSFER_DIRECTION_IN) {
+            /* HidBth sizes its read buffer to the 8-byte boot mouse report, which
+               truncates the longer multitouch reports. Read into our own larger
+               buffer so the whole report arrives; copy back what fits on pass-through. */
             rc->OrigBufferSize = acl->BufferSize;
             rc->OrigRemaining = acl->RemainingBufferSize;
+            rc->OrigBuffer = acl->Buffer;
+            rc->OrigBufferMDL = acl->BufferMDL;
+            rc->Substituted = FALSE;
+            if (acl->BufferSize < MM_READ_BUF_SIZE) {
+                acl->Buffer = rc->BigBuf;
+                acl->BufferMDL = NULL;
+                acl->BufferSize = MM_READ_BUF_SIZE;
+                rc->Substituted = TRUE;
+            }
             MmSendWithCompletion(ctx, Request, MmAclInComplete);
             return;
         }
@@ -456,9 +468,15 @@ MmAclInComplete(_In_ WDFREQUEST Request, _In_ WDFIOTARGET Target,
         if (data != NULL && length > 0 &&
             MmHandleIncoming(ctx, acl->ChannelHandle, data, length) == MM_SWALLOW) {
             MM_STAT_INC(ctx, Swallowed);
-            /* Hand the same read back to the Bluetooth stack for the next packet. */
-            acl->BufferSize = rc->OrigBufferSize;
-            acl->RemainingBufferSize = rc->OrigRemaining;
+            /* Re-post the read for the next packet, keeping our larger buffer. */
+            if (rc->Substituted) {
+                acl->Buffer = rc->BigBuf;
+                acl->BufferMDL = NULL;
+                acl->BufferSize = MM_READ_BUF_SIZE;
+            } else {
+                acl->BufferSize = rc->OrigBufferSize;
+            }
+            acl->RemainingBufferSize = acl->BufferSize;
             WdfRequestFormatRequestUsingCurrentType(Request);
             WdfRequestSetCompletionRoutine(Request, MmAclInComplete, ctx);
             if (WdfRequestSend(Request, Target, WDF_NO_SEND_OPTIONS)) {
@@ -466,6 +484,25 @@ MmAclInComplete(_In_ WDFREQUEST Request, _In_ WDFIOTARGET Target,
             }
             status = WdfRequestGetStatus(Request);
             WdfRequestComplete(Request, status);
+            return;
+        }
+
+        /* Pass-through: give HidBth its own buffer back, filled with what fits. */
+        if (rc->Substituted) {
+            ULONG copy = MM_MIN(length, rc->OrigBufferSize);
+            PUCHAR dst = rc->OrigBuffer;
+            if (dst == NULL && rc->OrigBufferMDL != NULL) {
+                dst = (PUCHAR)MmGetSystemAddressForMdlSafe(rc->OrigBufferMDL,
+                            NormalPagePriority | MdlMappingNoExecute);
+            }
+            if (dst != NULL && copy > 0) {
+                RtlCopyMemory(dst, rc->BigBuf, copy);
+            }
+            acl->Buffer = rc->OrigBuffer;
+            acl->BufferMDL = rc->OrigBufferMDL;
+            acl->BufferSize = rc->OrigBufferSize;
+            acl->RemainingBufferSize = rc->OrigBufferSize - copy;
+            WdfRequestCompleteWithInformation(Request, status, Params->IoStatus.Information);
             return;
         }
     }
