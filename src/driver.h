@@ -64,6 +64,7 @@ typedef struct _MM_STATS {
     volatile LONG InputReports, Swallowed, VhfReports, VhfSubmitFailed;
     volatile LONG HidEnableAttempts, HidCollectionsFound, HidCollectionsMatched, HidSetFeatureOk;
     volatile LONG LastHidVidPid;
+    volatile LONG BtAddrKnown, EnableOnInterrupt;
     volatile LONG EnableSent, EnableFailed, Handshakes, LastHandshake;
     NTSTATUS QiStatus, VhfCreateStatus, VhfStartStatus, LastEnableStatus, LastVhfSubmitStatus;
     NTSTATUS LastHidEnumStatus, LastHidInfoStatus, LastHidSetFeatureStatus;
@@ -122,6 +123,7 @@ typedef struct _DEVICE_CONTEXT {
     WDFWORKITEM         StatsWorkItem;
     WDFWORKITEM         EnableWorkItem;
     volatile LONG       EnableInProgress;
+    L2CAP_CHANNEL_HANDLE EnableChannel;   /* channel the enable was last sent on */
 } DEVICE_CONTEXT, *PDEVICE_CONTEXT;
 
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(DEVICE_CONTEXT, MmGetContext)

@@ -306,7 +306,7 @@ MmHandleIncoming(_In_ PDEVICE_CONTEXT Ctx, _In_ L2CAP_CHANNEL_HANDLE Channel,
     /* HANDSHAKE answering our SET_REPORT: HidBth didn't ask for it, so eat it. */
     if ((Data[0] & 0xF0) == HIDP_HANDSHAKE && Length == 1) {
         WdfSpinLockAcquire(Ctx->Lock);
-        if (Ctx->ExpectHandshake && Channel == Ctx->ControlChannel &&
+        if (Ctx->ExpectHandshake && Channel == Ctx->EnableChannel &&
             now - Ctx->LastEnableMs <= MM_HANDSHAKE_WINDOW_MS) {
             Ctx->ExpectHandshake = FALSE;
             action = MM_SWALLOW;
@@ -415,7 +415,7 @@ MmHandleIncoming(_In_ PDEVICE_CONTEXT Ctx, _In_ L2CAP_CHANNEL_HANDLE Channel,
         WdfTimerStart(Ctx->InertiaTimer, WDF_REL_TIMEOUT_IN_MS(MM_INERTIA_TICK_MS));
     }
     if (wantEnable) {
-        MmRequestEnable(Ctx);
+        MmMaybeEnableMultitouch(Ctx);
     }
     return action;
 }
@@ -436,6 +436,7 @@ MmAclInComplete(_In_ WDFREQUEST Request, _In_ WDFIOTARGET Target,
             WdfSpinLockAcquire(ctx->Lock);
             ctx->BtAddress = acl->BtAddress;
             WdfSpinLockRelease(ctx->Lock);
+            MM_STAT_SET(ctx, BtAddrKnown, 1);
         }
         ULONG length = (acl->RemainingBufferSize <= acl->BufferSize)
                            ? acl->BufferSize - acl->RemainingBufferSize
@@ -479,7 +480,10 @@ static VOID MmMaybeEnableMultitouch(_In_ PDEVICE_CONTEXT Ctx)
     }
 
     WdfSpinLockAcquire(Ctx->Lock);
-    control = Ctx->ControlChannel;
+    /* Prefer the real control channel; fall back to the interrupt channel, which
+       we always have. On devices that never open the control channel through
+       this filter, the interrupt channel is the only handle available. */
+    control = Ctx->ControlChannel ? Ctx->ControlChannel : Ctx->InterruptChannel;
     address = Ctx->BtAddress;
     model = Ctx->Model;
     if (Ctx->MultitouchActive || control == NULL || address == 0 ||
@@ -488,6 +492,9 @@ static VOID MmMaybeEnableMultitouch(_In_ PDEVICE_CONTEXT Ctx)
         return;
     }
     Ctx->LastEnableMs = now;
+    Ctx->EnableChannel = control;
+    Ctx->Stats.EnableOnInterrupt = (Ctx->ControlChannel == NULL) ? 1 : 0;
+    InterlockedIncrement(&Ctx->Stats.Version);
     WdfSpinLockRelease(Ctx->Lock);
 
     if (InterlockedCompareExchange(&Ctx->FeatureInFlight, 1, 0) != 0) {

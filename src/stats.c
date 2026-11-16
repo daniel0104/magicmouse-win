@@ -91,6 +91,8 @@ VOID MmEvtStatsWorkItem(_In_ WDFWORKITEM WorkItem)
     MmPutULong(status, L"LastHidEnumStatus",    (ULONG)st->LastHidEnumStatus);
     MmPutULong(status, L"LastHidInfoStatus",    (ULONG)st->LastHidInfoStatus);
     MmPutULong(status, L"LastHidSetFeatureStatus", (ULONG)st->LastHidSetFeatureStatus);
+    MmPutULong(status, L"BtAddrKnown",      (ULONG)st->BtAddrKnown);
+    MmPutULong(status, L"EnableOnInterrupt",(ULONG)st->EnableOnInterrupt);
     MmPutULong(status, L"EnableSent",       (ULONG)st->EnableSent);
     MmPutULong(status, L"EnableFailed",     (ULONG)st->EnableFailed);
     MmPutULong(status, L"LastEnableStatus", (ULONG)st->LastEnableStatus);
