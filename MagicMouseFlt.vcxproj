@@ -86,6 +86,7 @@
     <ClCompile Include="src\gesture.c" />
     <ClCompile Include="src\mmproto.c" />
     <ClCompile Include="src\stats.c" />
+    <ClCompile Include="src\enable.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\driver.h" />

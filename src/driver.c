@@ -252,6 +252,14 @@ MmEvtDeviceAdd(_In_ WDFDRIVER Driver, _Inout_ PWDFDEVICE_INIT DeviceInit)
         if (!NT_SUCCESS(status)) {
             return status;
         }
+
+        WDF_WORKITEM_CONFIG_INIT(&workConfig, MmEvtEnableWorkItem);
+        WDF_OBJECT_ATTRIBUTES_INIT(&attr);
+        attr.ParentObject = device;
+        status = WdfWorkItemCreate(&workConfig, &attr, &ctx->EnableWorkItem);
+        if (!NT_SUCCESS(status)) {
+            return status;
+        }
     }
 
     /* Virtual HID mouse. vhf.sys sits below us (see the INF). If this fails the
@@ -329,6 +337,7 @@ MmEvtD0Exit(_In_ WDFDEVICE Device, _In_ WDF_POWER_DEVICE_STATE TargetState)
     WdfTimerStop(ctx->InertiaTimer, TRUE);
     WdfTimerStop(ctx->StatsTimer, TRUE);
     WdfWorkItemFlush(ctx->StatsWorkItem);
+    if (ctx->EnableWorkItem != NULL) { WdfWorkItemFlush(ctx->EnableWorkItem); }
     if (InterlockedCompareExchange(&ctx->FeatureInFlight, 0, 0) != 0) {
         WdfRequestCancelSentRequest(ctx->FeatureRequest);
     }

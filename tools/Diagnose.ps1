@@ -99,7 +99,10 @@ if (-not $after) {
             $d = [int64]$val - [int64]$before[$k]; if ($d -ne 0) { $delta = "   (+$d while testing)" }
         }
         if ($k -like '*Status') { $val = Hex $val }
-        W ("  {0,-20} {1}{2}" -f $k, $val, $delta)
+        if ($k -eq 'LastHidVidPid' -and $val -is [int] -and $val -ne 0) {
+            $val = 'VID {0:X4} PID {1:X4}' -f (($val -shr 16) -band 0xFFFF), ($val -band 0xFFFF)
+        }
+        W ("  {0,-24} {1}{2}" -f $k, $val, $delta)
     }
     $ids = $after['ReportIds']
     if ($ids) {

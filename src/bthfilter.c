@@ -415,7 +415,7 @@ MmHandleIncoming(_In_ PDEVICE_CONTEXT Ctx, _In_ L2CAP_CHANNEL_HANDLE Channel,
         WdfTimerStart(Ctx->InertiaTimer, WDF_REL_TIMEOUT_IN_MS(MM_INERTIA_TICK_MS));
     }
     if (wantEnable) {
-        MmMaybeEnableMultitouch(Ctx);
+        MmRequestEnable(Ctx);
     }
     return action;
 }

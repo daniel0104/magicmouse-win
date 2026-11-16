@@ -41,7 +41,7 @@
 #define PSM_HID_INTERRUPT       0x0013
 #endif
 #define MM_ENABLE_DELAY_MS      500     /* after the channels open, like Linux */
-#define MM_ENABLE_RETRY_MS      1000
+#define MM_ENABLE_RETRY_MS      3000
 #define MM_HANDSHAKE_WINDOW_MS  2000
 
 /* MMLOG("format\n", args...) - the format must be a string literal. */
@@ -62,8 +62,11 @@ typedef struct _MM_STATS {
     volatile LONG Version;
     volatile LONG Brbs, AclIn, AclOut, Opens, Closes, OtherIoctls;
     volatile LONG InputReports, Swallowed, VhfReports, VhfSubmitFailed;
+    volatile LONG HidEnableAttempts, HidCollectionsFound, HidCollectionsMatched, HidSetFeatureOk;
+    volatile LONG LastHidVidPid;
     volatile LONG EnableSent, EnableFailed, Handshakes, LastHandshake;
     NTSTATUS QiStatus, VhfCreateStatus, VhfStartStatus, LastEnableStatus, LastVhfSubmitStatus;
+    NTSTATUS LastHidEnumStatus, LastHidInfoStatus, LastHidSetFeatureStatus;
     volatile LONG ReportIds[256];
     USHORT   BrbTypes[16];
     volatile LONG BrbTypeCount;
@@ -117,6 +120,8 @@ typedef struct _DEVICE_CONTEXT {
     LONG                StatsWritten;
     WDFTIMER            StatsTimer;
     WDFWORKITEM         StatsWorkItem;
+    WDFWORKITEM         EnableWorkItem;
+    volatile LONG       EnableInProgress;
 } DEVICE_CONTEXT, *PDEVICE_CONTEXT;
 
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(DEVICE_CONTEXT, MmGetContext)
@@ -145,4 +150,8 @@ VOID MmStatsNoteBrbType(_In_ PDEVICE_CONTEXT Ctx, _In_ USHORT Type);
 /* stats.c */
 EVT_WDF_TIMER MmEvtStatsTimer;
 EVT_WDF_WORKITEM MmEvtStatsWorkItem;
+
+/* enable.c */
+EVT_WDF_WORKITEM MmEvtEnableWorkItem;
+VOID MmRequestEnable(_In_ PDEVICE_CONTEXT Ctx);
 VOID MmResetConnectionState(_In_ PDEVICE_CONTEXT Ctx);
