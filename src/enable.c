@@ -72,7 +72,7 @@ static NTSTATUS MmOpenOwnControlChannel(_In_ PDEVICE_CONTEXT Ctx)
 
     WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&desc, brb, sizeof(*brb));
     status = WdfIoTargetSendInternalIoctlOthersSynchronously(Ctx->Target, NULL,
-                 IOCTL_INTERNAL_BTH_SUBMIT_BRB, &desc, NULL, NULL, NULL, NULL, NULL);
+                 IOCTL_INTERNAL_BTH_SUBMIT_BRB, &desc, NULL, NULL, NULL, NULL);
     if (NT_SUCCESS(status)) {
         status = brb->Hdr.Status;
     }
@@ -131,7 +131,7 @@ VOID MmCloseOwnControlChannel(_In_ PDEVICE_CONTEXT Ctx)
     Ctx->CloseBrb.ChannelHandle = handle;
     WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&desc, &Ctx->CloseBrb, sizeof(Ctx->CloseBrb));
     (VOID)WdfIoTargetSendInternalIoctlOthersSynchronously(Ctx->Target, NULL,
-              IOCTL_INTERNAL_BTH_SUBMIT_BRB, &desc, NULL, NULL, NULL, NULL, NULL);
+              IOCTL_INTERNAL_BTH_SUBMIT_BRB, &desc, NULL, NULL, NULL, NULL);
     InterlockedExchange(&Ctx->OwnChannelState, 0);
 }
 
