@@ -325,6 +325,18 @@ MmHandleIncoming(_In_ PDEVICE_CONTEXT Ctx, _In_ L2CAP_CHANNEL_HANDLE Channel,
         Ctx->Stats.LastInputLen = (LONG)Length;
         InterlockedIncrement(&Ctx->Stats.ReportIds[Data[1]]);
         MM_STAT_INC(Ctx, InputReports);
+        if (Data[1] == MM2_REPORT_ID) {
+            ULONG rlen = Length - 1;      /* report bytes, without the HIDP header */
+            if (rlen < 8)       InterlockedIncrement(&Ctx->Stats.Len12Lt8);
+            else if (rlen == 8) InterlockedIncrement(&Ctx->Stats.Len12Eq8);
+            else if (rlen < 14) InterlockedIncrement(&Ctx->Stats.Len12Mid);
+            else                InterlockedIncrement(&Ctx->Stats.Len12Ge14);
+        }
+        if ((LONG)Length > Ctx->Stats.LongestInputLen) {
+            ULONG m = MM_MIN(Length, (ULONG)sizeof(Ctx->Stats.LongestInput));
+            RtlCopyMemory(Ctx->Stats.LongestInput, Data, m);
+            Ctx->Stats.LongestInputLen = (LONG)Length;
+        }
     } else {
         ULONG n = MM_MIN(Length, (ULONG)sizeof(Ctx->Stats.LastControlIn));
         RtlCopyMemory(Ctx->Stats.LastControlIn, Data, n);

@@ -93,7 +93,7 @@ if (-not $after) {
 } else {
     foreach ($k in $after.Keys) {
         $val = $after[$k]
-        if ($k -in 'ReportIds', 'BrbTypes', 'LastInput', 'LastControlIn') { continue }
+        if ($k -in 'ReportIds', 'BrbTypes', 'LastInput', 'LastControlIn', 'LongestInput') { continue }
         $delta = ''
         if ($before -and $before.Contains($k) -and $val -is [int] -and $k -ne 'Updated') {
             $d = [int64]$val - [int64]$before[$k]; if ($d -ne 0) { $delta = "   (+$d while testing)" }
@@ -117,6 +117,7 @@ if (-not $after) {
         W "  BrbTypes             $($types -join ' ')"
     }
     W "  LastInput            $(Bytes $after['LastInput'])"
+    W "  LongestInput         $(Bytes $after['LongestInput'])"
     W "  LastControlIn        $(Bytes $after['LastControlIn'])"
 }
 W

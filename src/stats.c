@@ -106,6 +106,12 @@ VOID MmEvtStatsWorkItem(_In_ WDFWORKITEM WorkItem)
                 (ULONG)(MM_MIN(st->BrbTypeCount, 16) * sizeof(USHORT)));
     MmPutBinary(status, L"LastInput",       st->LastInput, (ULONG)MM_MIN(st->LastInputLen, (LONG)sizeof(st->LastInput)));
     MmPutULong(status, L"LastInputLen",     (ULONG)st->LastInputLen);
+    MmPutBinary(status, L"LongestInput",    st->LongestInput, (ULONG)MM_MIN(st->LongestInputLen, (LONG)sizeof(st->LongestInput)));
+    MmPutULong(status, L"LongestInputLen",  (ULONG)st->LongestInputLen);
+    MmPutULong(status, L"Len12_lt8",        (ULONG)st->Len12Lt8);
+    MmPutULong(status, L"Len12_eq8",        (ULONG)st->Len12Eq8);
+    MmPutULong(status, L"Len12_9to13",      (ULONG)st->Len12Mid);
+    MmPutULong(status, L"Len12_ge14",       (ULONG)st->Len12Ge14);
     MmPutBinary(status, L"LastControlIn",   st->LastControlIn,
                 (ULONG)MM_MIN(st->LastControlInLen, (LONG)sizeof(st->LastControlIn)));
 

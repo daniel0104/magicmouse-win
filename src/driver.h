@@ -75,6 +75,9 @@ typedef struct _MM_STATS {
     volatile LONG BrbTypeCount;
     UCHAR    LastInput[48];
     volatile LONG LastInputLen;
+    UCHAR    LongestInput[64];
+    volatile LONG LongestInputLen;
+    volatile LONG Len12Lt8, Len12Eq8, Len12Mid, Len12Ge14;
     UCHAR    LastControlIn[16];
     volatile LONG LastControlInLen;
 } MM_STATS;
