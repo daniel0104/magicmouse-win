@@ -34,6 +34,7 @@ typedef struct _MM_SETTINGS {
     ULONG Inertia;              /* 0/1, momentum after lifting the finger */
     ULONG AxisLock;             /* 0/1, lock to one axis when the swipe is clearly straight */
     ULONG ScrollThreshold;      /* touch units a finger must travel before it scrolls (default 25) */
+    ULONG EnableMethod;         /* 0 send on interrupt channel, 1 open our own control channel (default) */
 } MM_SETTINGS;
 
 typedef struct _MM_TOUCH_IN {

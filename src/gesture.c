@@ -43,6 +43,7 @@ void MmSettingsDefaults(MM_SETTINGS *s)
     s->Inertia          = 1;
     s->AxisLock         = 1;
     s->ScrollThreshold  = 25;
+    s->EnableMethod     = 1;
 }
 
 void MmSettingsClamp(MM_SETTINGS *s)
@@ -57,6 +58,7 @@ void MmSettingsClamp(MM_SETTINGS *s)
     s->Inertia          = s->Inertia ? 1 : 0;
     s->AxisLock         = s->AxisLock ? 1 : 0;
     s->ScrollThreshold  = MM_CLAMP(s->ScrollThreshold, 1u, 400u);
+    s->EnableMethod     = MM_MIN(s->EnableMethod, 1u);
 }
 
 void MmGestureInit(MM_GESTURE *g)

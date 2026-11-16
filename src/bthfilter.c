@@ -17,8 +17,6 @@ static EVT_WDF_REQUEST_COMPLETION_ROUTINE MmAclInComplete;
 static EVT_WDF_REQUEST_COMPLETION_ROUTINE MmOpenChannelComplete;
 static EVT_WDF_REQUEST_COMPLETION_ROUTINE MmFeatureComplete;
 
-static VOID MmMaybeEnableMultitouch(_In_ PDEVICE_CONTEXT Ctx);
-
 /* ------------------------------------------------------------------------ */
 /* helpers */
 
@@ -121,6 +119,7 @@ VOID MmResetConnectionState(_In_ PDEVICE_CONTEXT Ctx)
     release = MmGestureReset(&Ctx->Gesture, report);
     WdfSpinLockRelease(Ctx->Lock);
 
+    MmCloseOwnControlChannel(Ctx);
     if (release) {
         MmSubmitReport(Ctx, report);
     }
@@ -415,7 +414,7 @@ MmHandleIncoming(_In_ PDEVICE_CONTEXT Ctx, _In_ L2CAP_CHANNEL_HANDLE Channel,
         WdfTimerStart(Ctx->InertiaTimer, WDF_REL_TIMEOUT_IN_MS(MM_INERTIA_TICK_MS));
     }
     if (wantEnable) {
-        MmMaybeEnableMultitouch(Ctx);
+        MmRequestEnable(Ctx);
     }
     return action;
 }
@@ -465,7 +464,7 @@ MmAclInComplete(_In_ WDFREQUEST Request, _In_ WDFIOTARGET Target,
 /* ------------------------------------------------------------------------ */
 /* Multitouch enable (SET_REPORT Feature on the control channel) */
 
-static VOID MmMaybeEnableMultitouch(_In_ PDEVICE_CONTEXT Ctx)
+VOID MmMaybeEnableMultitouch(_In_ PDEVICE_CONTEXT Ctx)
 {
     WDF_REQUEST_REUSE_PARAMS reuse;
     L2CAP_CHANNEL_HANDLE control;

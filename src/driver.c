@@ -78,6 +78,7 @@ static VOID MmLoadSettings(_In_ PDEVICE_CONTEXT Ctx)
         MmQueryULong(key, L"Inertia",          &s.Inertia);
         MmQueryULong(key, L"AxisLock",         &s.AxisLock);
         MmQueryULong(key, L"ScrollThreshold",  &s.ScrollThreshold);
+        MmQueryULong(key, L"EnableMethod",     &s.EnableMethod);
         WdfRegistryClose(key);
     }
     MmSettingsClamp(&s);
@@ -341,6 +342,7 @@ MmEvtD0Exit(_In_ WDFDEVICE Device, _In_ WDF_POWER_DEVICE_STATE TargetState)
     if (InterlockedCompareExchange(&ctx->FeatureInFlight, 0, 0) != 0) {
         WdfRequestCancelSentRequest(ctx->FeatureRequest);
     }
+    MmCloseOwnControlChannel(ctx);
     MmResetConnectionState(ctx);
     return STATUS_SUCCESS;
 }

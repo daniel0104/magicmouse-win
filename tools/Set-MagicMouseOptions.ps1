@@ -38,6 +38,11 @@ param(
     [ValidateRange(1, 400)]
     [int]$ScrollThreshold,
 
+    # How multitouch is switched on: 0 = send on the interrupt channel,
+    # 1 = open our own control channel (default). Try 0 if 1 doesn't work.
+    [ValidateRange(0, 1)]
+    [int]$EnableMethod,
+
     [switch]$Show,
     [switch]$NoRestart
 )
@@ -64,11 +69,12 @@ if ($PSBoundParameters.ContainsKey('Acceleration'))     { Set-Value Acceleration
 if ($PSBoundParameters.ContainsKey('Inertia'))          { Set-Value Inertia          ([int]$Inertia); $changed = $true }
 if ($PSBoundParameters.ContainsKey('AxisLock'))         { Set-Value AxisLock         ([int]$AxisLock); $changed = $true }
 if ($PSBoundParameters.ContainsKey('ScrollThreshold'))  { Set-Value ScrollThreshold  $ScrollThreshold; $changed = $true }
+if ($PSBoundParameters.ContainsKey('EnableMethod'))     { Set-Value EnableMethod     $EnableMethod; $changed = $true }
 
 if ($Show -or -not $changed) {
     Get-ItemProperty -Path $key |
         Select-Object MiddleClickMode, MiddleZoneWidth, ScrollEnabled, HorizontalScroll, NaturalScrolling,
-                      ScrollSpeed, Acceleration, Inertia, AxisLock, ScrollThreshold |
+                      ScrollSpeed, Acceleration, Inertia, AxisLock, ScrollThreshold, EnableMethod |
         Format-List
     Write-Host 'MiddleClickMode: 0 = off, 1 = centre zone, 2 = two-finger, 3 = both'
 }

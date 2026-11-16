@@ -65,6 +65,8 @@ typedef struct _MM_STATS {
     volatile LONG HidEnableAttempts, HidCollectionsFound, HidCollectionsMatched, HidSetFeatureOk;
     volatile LONG LastHidVidPid;
     volatile LONG BtAddrKnown, EnableOnInterrupt;
+    volatile LONG OwnChannelState;
+    NTSTATUS OwnChannelOpenStatus;
     volatile LONG EnableSent, EnableFailed, Handshakes, LastHandshake;
     NTSTATUS QiStatus, VhfCreateStatus, VhfStartStatus, LastEnableStatus, LastVhfSubmitStatus;
     NTSTATUS LastHidEnumStatus, LastHidInfoStatus, LastHidSetFeatureStatus;
@@ -108,6 +110,12 @@ typedef struct _DEVICE_CONTEXT {
     WDFMEMORY           FeatureBrbMemory;
     struct _BRB_L2CA_ACL_TRANSFER FeatureBrb;
     UCHAR               FeatureBuffer[8];
+
+    /* Control channel we open ourselves (EnableMethod 1) */
+    L2CAP_CHANNEL_HANDLE OwnControlChannel;
+    volatile LONG       OwnChannelState;   /* 0 none, 1 opening, 2 open, 3 failed */
+    struct _BRB_L2CA_OPEN_CHANNEL OpenBrb;
+    struct _BRB_L2CA_CLOSE_CHANNEL CloseBrb;
 
     WDFTIMER            EnableTimer;
     WDFTIMER            InertiaTimer;
@@ -156,4 +164,6 @@ EVT_WDF_WORKITEM MmEvtStatsWorkItem;
 /* enable.c */
 EVT_WDF_WORKITEM MmEvtEnableWorkItem;
 VOID MmRequestEnable(_In_ PDEVICE_CONTEXT Ctx);
+VOID MmCloseOwnControlChannel(_In_ PDEVICE_CONTEXT Ctx);
 VOID MmResetConnectionState(_In_ PDEVICE_CONTEXT Ctx);
+VOID MmMaybeEnableMultitouch(_In_ PDEVICE_CONTEXT Ctx);
