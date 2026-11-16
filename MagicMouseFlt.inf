@@ -1,0 +1,96 @@
+;
+; MagicMouseFlt.inf - Apple Magic Mouse multitouch filter (scrolling + middle click)
+;
+; Installs the in-box Bluetooth HID driver (HidBth) for the Magic Mouse and
+; adds two lower filters underneath it:  MagicMouseFlt (this driver) and the
+; in-box Virtual HID Framework (vhf) that hosts the virtual mouse.
+;
+; LowerFilters attach bottom-up in the order listed: vhf goes first (closest to
+; the Bluetooth PDO), so it sits below MagicMouseFlt as VHF requires.
+;
+
+[Version]
+Signature   = "$WINDOWS NT$"
+Class       = HIDClass
+ClassGuid   = {745a17a0-74d3-11d0-b6fe-00a0c90f57da}
+Provider    = %ProviderName%
+CatalogFile = MagicMouseFlt.cat
+DriverVer   = 11/16/2026,1.0.0.0
+PnpLockdown = 1
+
+[DestinationDirs]
+DefaultDestDir = 13
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[SourceDisksFiles]
+MagicMouseFlt.sys = 1,,
+
+[Manufacturer]
+%MfgName% = MagicMouse, NT$ARCH$.10.0...16299
+
+[MagicMouse.NT$ARCH$.10.0...16299]
+; Magic Mouse (1st gen, AA batteries)
+%MM1.DeviceDesc% = MagicMouse_Inst, BTHENUM\{00001124-0000-1000-8000-00805f9b34fb}_VID&000205ac_PID&030d
+; Magic Mouse 2 (Lightning)
+%MM2.DeviceDesc% = MagicMouse_Inst, BTHENUM\{00001124-0000-1000-8000-00805f9b34fb}_VID&0001004c_PID&0269
+; Magic Mouse (USB-C, 2024)
+%MM3.DeviceDesc% = MagicMouse_Inst, BTHENUM\{00001124-0000-1000-8000-00805f9b34fb}_VID&0001004c_PID&0323
+
+[MagicMouse_Inst.NT]
+Include   = hidbth.inf
+Needs     = HIDBTH_Inst.NT
+CopyFiles = MagicMouse_CopyFiles
+
+[MagicMouse_CopyFiles]
+MagicMouseFlt.sys
+
+[MagicMouse_Inst.NT.HW]
+Include = input.inf
+Needs   = HID_Inst.NT.HW
+AddReg  = MagicMouse_HW_AddReg
+
+[MagicMouse_HW_AddReg]
+HKR,,"LowerFilters",0x00010000,"vhf","MagicMouseFlt"
+
+[MagicMouse_Inst.NT.Services]
+Include    = hidbth.inf
+Needs      = HIDBTH_Inst.NT.Services
+AddService = MagicMouseFlt,, MagicMouseFlt_Service
+
+[MagicMouseFlt_Service]
+DisplayName   = %SvcDesc%
+ServiceType   = 1               ; SERVICE_KERNEL_DRIVER
+StartType     = 3               ; SERVICE_DEMAND_START
+ErrorControl  = 1               ; SERVICE_ERROR_NORMAL
+ServiceBinary = %13%\MagicMouseFlt.sys
+AddReg        = MagicMouseFlt_Parameters
+
+; Defaults. FLG_ADDREG_TYPE_DWORD | FLG_ADDREG_NOCLOBBER keeps user changes on reinstall.
+[MagicMouseFlt_Parameters]
+HKR,Parameters,MiddleClickMode, 0x00010003, 1      ; 0 off, 1 centre zone, 2 two-finger, 3 both
+HKR,Parameters,MiddleZoneWidth, 0x00010003, 350    ; half width of the centre strip (touch units)
+HKR,Parameters,ScrollEnabled,   0x00010003, 1
+HKR,Parameters,HorizontalScroll,0x00010003, 1
+HKR,Parameters,NaturalScrolling,0x00010003, 1      ; 1 = like macOS, 0 = like a wheel
+HKR,Parameters,ScrollSpeed,     0x00010003, 100    ; percent, 10-500
+HKR,Parameters,Acceleration,    0x00010003, 1
+HKR,Parameters,Inertia,         0x00010003, 1
+HKR,Parameters,AxisLock,        0x00010003, 1
+HKR,Parameters,ScrollThreshold, 0x00010003, 25
+
+[MagicMouse_Inst.NT.Wdf]
+KmdfService = MagicMouseFlt, MagicMouseFlt_WdfSection
+
+[MagicMouseFlt_WdfSection]
+KmdfLibraryVersion = $KMDFVERSION$
+
+[Strings]
+ProviderName   = "MagicMouseFlt (open source)"
+MfgName        = "Apple"
+DiskName       = "MagicMouseFlt Installation Disk"
+MM1.DeviceDesc = "Apple Magic Mouse (MagicMouseFlt)"
+MM2.DeviceDesc = "Apple Magic Mouse 2 (MagicMouseFlt)"
+MM3.DeviceDesc = "Apple Magic Mouse USB-C (MagicMouseFlt)"
+SvcDesc        = "Magic Mouse multitouch filter"

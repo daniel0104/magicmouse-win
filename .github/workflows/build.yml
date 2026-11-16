@@ -1,0 +1,122 @@
+name: Build installer
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Gesture and protocol unit tests
+        run: |
+          cc -DMM_USERMODE -Isrc -Wall -Wextra -Wno-unused-parameter -fsanitize=address,undefined \
+             -o test_gesture test/test_gesture.c src/gesture.c src/mmproto.c
+          ./test_gesture
+
+  build:
+    needs: test
+    runs-on: windows-2022     # has Visual Studio 2022 + the Windows Driver Kit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: microsoft/setup-msbuild@v2
+
+      - name: Version
+        id: ver
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") { $v = "${{ github.ref_name }}".TrimStart('v') }
+          else { $v = "0.1.${{ github.run_number }}" }
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Build driver (x64, ARM64)
+        shell: pwsh
+        run: |
+          msbuild MagicMouseFlt.vcxproj /m /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off
+          if ($LASTEXITCODE -ne 0) { throw "x64 build failed" }
+          msbuild MagicMouseFlt.vcxproj /m /p:Configuration=Release /p:Platform=ARM64 /p:SignMode=Off
+          if ($LASTEXITCODE -ne 0) { Write-Warning "ARM64 build failed - the installer will be x64 only" }
+
+      - name: Sign driver packages
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bin = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
+          $kitVer = Get-ChildItem $bin -Directory | Where-Object Name -match '^10\.' | Sort-Object Name -Descending |
+                    Where-Object { Test-Path "$($_.FullName)\x64\signtool.exe" } | Select-Object -First 1
+          $signtool = "$($kitVer.FullName)\x64\signtool.exe"
+          $inf2cat  = "$($kitVer.FullName)\x86\Inf2Cat.exe"
+          if (-not (Test-Path $inf2cat)) { $inf2cat = (Get-ChildItem $bin -Recurse -Filter Inf2Cat.exe | Select-Object -First 1).FullName }
+          Write-Host "signtool: $signtool"; Write-Host "inf2cat: $inf2cat"
+
+          # Throwaway signing certificate: its private key exists only on this
+          # build machine and is gone when the job ends.
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -CertStoreLocation Cert:\CurrentUser\My `
+                    -Subject "CN=MagicMouseFlt driver (build ${{ github.run_id }})" `
+                    -KeyAlgorithm RSA -KeyLength 3072 -HashAlgorithm SHA256 -NotAfter (Get-Date).AddYears(20)
+          New-Item -ItemType Directory -Force stage | Out-Null
+
+          $targets = @(
+            @{ Platform = 'x64';   Dir = 'x64';   Os = @('10_RS3_X64', '10_X64') },
+            @{ Platform = 'ARM64'; Dir = 'arm64'; Os = @('10_RS3_ARM64', '10_RS4_ARM64', '10_ARM64') }
+          )
+          foreach ($t in $targets) {
+            $out = Join-Path $PWD "$($t.Platform)\Release"
+            $sys = Get-ChildItem $out -Recurse -Filter MagicMouseFlt.sys -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $sys) {
+              if ($t.Platform -eq 'x64') { throw "x64 MagicMouseFlt.sys not found" }
+              Write-Warning "Skipping $($t.Platform)"; continue
+            }
+            $inf = Get-ChildItem $out -Recurse -Filter MagicMouseFlt.inf | Where-Object {
+                     (Get-Content $_.FullName -Raw) -notmatch '\$KMDFVERSION\$' } | Select-Object -First 1
+            if (-not $inf) { throw "Stamped INF not found for $($t.Platform)" }
+
+            $dst = Join-Path $PWD "stage\$($t.Dir)"
+            New-Item -ItemType Directory -Force $dst | Out-Null
+            Copy-Item $sys.FullName, $inf.FullName $dst
+            Export-Certificate -Cert $cert -FilePath "$dst\MagicMouseFlt.cer" | Out-Null
+
+            & $signtool sign /fd sha256 /sha1 $cert.Thumbprint /s My "$dst\MagicMouseFlt.sys"
+            if ($LASTEXITCODE -ne 0) { throw "signtool (sys) failed" }
+
+            $ok = $false
+            foreach ($os in $t.Os) {
+              & $inf2cat /driver:"$dst" /os:$os
+              if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+            }
+            if (-not $ok) { throw "Inf2Cat failed for $($t.Platform)" }
+
+            & $signtool sign /fd sha256 /sha1 $cert.Thumbprint /s My "$dst\magicmouseflt.cat"
+            if ($LASTEXITCODE -ne 0) { throw "signtool (cat) failed" }
+            Get-ChildItem $dst | Format-Table Name, Length
+          }
+          Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)" -DeleteKey
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iscc "/DAppVersion=${{ steps.ver.outputs.version }}" "/DStageDir=$PWD\stage" installer\MagicMouseFlt.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MagicMouseDriver-Setup-${{ steps.ver.outputs.version }}
+          path: installer/output/*.exe
+
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer/output/*.exe
+          body: |
+            Download **MagicMouseDriver-Setup-${{ steps.ver.outputs.version }}.exe** and run it.
+            Pair the Magic Mouse first. Secure Boot must be off (Setup explains how if it isn't).
+            Windows SmartScreen will warn because the installer isn't signed: choose "More info" → "Run anyway".

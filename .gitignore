@@ -1,0 +1,8 @@
+x64/
+ARM64/
+stage/
+installer/output/
+*.user
+.vs/
+test_gesture
+test_gesture.exe
