@@ -452,6 +452,8 @@ MmAclInComplete(_In_ WDFREQUEST Request, _In_ WDFIOTARGET Target,
     struct _BRB_L2CA_ACL_TRANSFER *acl = &rc->Brb->BrbL2caAclTransfer;
     NTSTATUS status = Params->IoStatus.Status;
 
+    ULONG copy = 0;
+
     if (NT_SUCCESS(status)) {
         PUCHAR data = MmAclBuffer(acl);
         MM_STAT_INC(ctx, AclIn);
@@ -468,7 +470,8 @@ MmAclInComplete(_In_ WDFREQUEST Request, _In_ WDFIOTARGET Target,
         if (data != NULL && length > 0 &&
             MmHandleIncoming(ctx, acl->ChannelHandle, data, length) == MM_SWALLOW) {
             MM_STAT_INC(ctx, Swallowed);
-            /* Re-post the read for the next packet, keeping our larger buffer. */
+            /* Re-post the read for the next packet, keeping our larger buffer.
+               The request is going back DOWN, so leave our buffer in place. */
             if (rc->Substituted) {
                 acl->Buffer = rc->BigBuf;
                 acl->BufferMDL = NULL;
@@ -482,15 +485,12 @@ MmAclInComplete(_In_ WDFREQUEST Request, _In_ WDFIOTARGET Target,
             if (WdfRequestSend(Request, Target, WDF_NO_SEND_OPTIONS)) {
                 return;
             }
+            /* Re-send failed: fall through to restore the buffer and complete up. */
             status = WdfRequestGetStatus(Request);
-            WdfRequestComplete(Request, status);
-            return;
-        }
-
-        /* Pass-through: give HidBth its own buffer back, filled with what fits. */
-        if (rc->Substituted) {
-            ULONG copy = MM_MIN(length, rc->OrigBufferSize);
+        } else if (rc->Substituted) {
+            /* Pass-through: copy what fits back into HidBth's own buffer. */
             PUCHAR dst = rc->OrigBuffer;
+            copy = MM_MIN(length, rc->OrigBufferSize);
             if (dst == NULL && rc->OrigBufferMDL != NULL) {
                 dst = (PUCHAR)MmGetSystemAddressForMdlSafe(rc->OrigBufferMDL,
                             NormalPagePriority | MdlMappingNoExecute);
@@ -498,15 +498,20 @@ MmAclInComplete(_In_ WDFREQUEST Request, _In_ WDFIOTARGET Target,
             if (dst != NULL && copy > 0) {
                 RtlCopyMemory(dst, rc->BigBuf, copy);
             }
-            acl->Buffer = rc->OrigBuffer;
-            acl->BufferMDL = rc->OrigBufferMDL;
-            acl->BufferSize = rc->OrigBufferSize;
-            acl->RemainingBufferSize = rc->OrigBufferSize - copy;
-            WdfRequestCompleteWithInformation(Request, status, Params->IoStatus.Information);
-            return;
         }
     }
 
+    /* Every path that completes the request back UP to HidBth must restore the
+       buffer fields HidBth gave us - otherwise HidBth frees/uses the wrong
+       memory (BAD_POOL_CALLER), e.g. when reads are cancelled on device stop. */
+    if (rc->Substituted) {
+        acl->Buffer = rc->OrigBuffer;
+        acl->BufferMDL = rc->OrigBufferMDL;
+        acl->BufferSize = rc->OrigBufferSize;
+        acl->RemainingBufferSize = (copy <= rc->OrigBufferSize) ? rc->OrigBufferSize - copy
+                                                                : rc->OrigBufferSize;
+        rc->Substituted = FALSE;
+    }
     WdfRequestCompleteWithInformation(Request, status, Params->IoStatus.Information);
 }
 
