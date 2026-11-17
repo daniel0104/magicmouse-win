@@ -451,11 +451,19 @@ MmAclInComplete(_In_ WDFREQUEST Request, _In_ WDFIOTARGET Target,
     PREQUEST_CONTEXT rc = MmGetRequestContext(Request);
     struct _BRB_L2CA_ACL_TRANSFER *acl = &rc->Brb->BrbL2caAclTransfer;
     NTSTATUS status = Params->IoStatus.Status;
+    PUCHAR dst;
+    ULONG copy = 0, inLen = 0;
+    BOOLEAN swallow = FALSE;
+    UCHAR hdr = 0, reportId = 0;
 
-    ULONG copy = 0;
+    UNREFERENCED_PARAMETER(Target);
 
     if (NT_SUCCESS(status)) {
         PUCHAR data = MmAclBuffer(acl);
+        ULONG length = (acl->RemainingBufferSize <= acl->BufferSize)
+                           ? acl->BufferSize - acl->RemainingBufferSize
+                           : 0;
+        inLen = length;
         MM_STAT_INC(ctx, AclIn);
         if (acl->BtAddress != 0 && ctx->BtAddress == 0) {
             WdfSpinLockAcquire(ctx->Lock);
@@ -463,34 +471,21 @@ MmAclInComplete(_In_ WDFREQUEST Request, _In_ WDFIOTARGET Target,
             WdfSpinLockRelease(ctx->Lock);
             MM_STAT_SET(ctx, BtAddrKnown, 1);
         }
-        ULONG length = (acl->RemainingBufferSize <= acl->BufferSize)
-                           ? acl->BufferSize - acl->RemainingBufferSize
-                           : 0;
+
+        if (data != NULL && length >= 1) {
+            hdr = data[0];
+            reportId = (length >= 2) ? data[1] : 0;
+        }
 
         if (data != NULL && length > 0 &&
             MmHandleIncoming(ctx, acl->ChannelHandle, data, length) == MM_SWALLOW) {
             MM_STAT_INC(ctx, Swallowed);
-            /* Re-post the read for the next packet, keeping our larger buffer.
-               The request is going back DOWN, so leave our buffer in place. */
-            if (rc->Substituted) {
-                acl->Buffer = rc->BigBuf;
-                acl->BufferMDL = NULL;
-                acl->BufferSize = MM_READ_BUF_SIZE;
-            } else {
-                acl->BufferSize = rc->OrigBufferSize;
-            }
-            acl->RemainingBufferSize = acl->BufferSize;
-            WdfRequestFormatRequestUsingCurrentType(Request);
-            WdfRequestSetCompletionRoutine(Request, MmAclInComplete, ctx);
-            if (WdfRequestSend(Request, Target, WDF_NO_SEND_OPTIONS)) {
-                return;
-            }
-            /* Re-send failed: fall through to restore the buffer and complete up. */
-            status = WdfRequestGetStatus(Request);
-        } else if (rc->Substituted) {
-            /* Pass-through: copy what fits back into HidBth's own buffer. */
-            PUCHAR dst = rc->OrigBuffer;
+            swallow = TRUE;
+        } else if (rc->Substituted && length > 0) {
+            /* Pass-through (battery, native 8-byte, etc.): copy what fits back
+               into HidBth's own buffer. */
             copy = MM_MIN(length, rc->OrigBufferSize);
+            dst = rc->OrigBuffer;
             if (dst == NULL && rc->OrigBufferMDL != NULL) {
                 dst = (PUCHAR)MmGetSystemAddressForMdlSafe(rc->OrigBufferMDL,
                             NormalPagePriority | MdlMappingNoExecute);
@@ -501,17 +496,42 @@ MmAclInComplete(_In_ WDFREQUEST Request, _In_ WDFIOTARGET Target,
         }
     }
 
-    /* Every path that completes the request back UP to HidBth must restore the
-       buffer fields HidBth gave us - otherwise HidBth frees/uses the wrong
-       memory (BAD_POOL_CALLER), e.g. when reads are cancelled on device stop. */
+    /* Restore the buffer HidBth gave us. We never re-post HidBth's own request
+       (that let it free a request still in our hands during a device stop -
+       BAD_POOL_CALLER). Each read is completed exactly once; HidBth posts the
+       next one. */
     if (rc->Substituted) {
         acl->Buffer = rc->OrigBuffer;
         acl->BufferMDL = rc->OrigBufferMDL;
         acl->BufferSize = rc->OrigBufferSize;
-        acl->RemainingBufferSize = (copy <= rc->OrigBufferSize) ? rc->OrigBufferSize - copy
-                                                                : rc->OrigBufferSize;
         rc->Substituted = FALSE;
     }
+
+    /* A swallowed packet is handed to HidBth as an inert report (same HIDP
+       header and report ID, zeroed payload) so mouhid sees a valid no-op while
+       the real motion/scroll goes out through our virtual mouse. */
+    if (swallow) {
+        dst = (acl->Buffer != NULL) ? (PUCHAR)acl->Buffer
+            : (acl->BufferMDL != NULL
+                   ? (PUCHAR)MmGetSystemAddressForMdlSafe(acl->BufferMDL,
+                         NormalPagePriority | MdlMappingNoExecute)
+                   : NULL);
+        if (dst != NULL && acl->BufferSize >= 2 && hdr != 0) {
+            /* A full-size zeroed report (native length, capped to the buffer):
+               HIDP header + report ID, then zero buttons/motion = no-op. */
+            copy = MM_MIN(inLen, acl->BufferSize);
+            if (copy < 2) {
+                copy = (acl->BufferSize >= 2) ? MM_MIN(9u, acl->BufferSize) : 0;
+            }
+            RtlZeroMemory(dst, copy);
+            dst[0] = hdr;
+            dst[1] = reportId;
+        } else {
+            copy = 0;
+        }
+    }
+
+    acl->RemainingBufferSize = (copy <= acl->BufferSize) ? acl->BufferSize - copy : 0;
     WdfRequestCompleteWithInformation(Request, status, Params->IoStatus.Information);
 }
 
