@@ -130,6 +130,7 @@ typedef struct _DEVICE_CONTEXT {
     /* Diagnostics */
     MM_STATS            Stats;
     LONG                StatsWritten;
+    LONG                SettingsGen;
     WDFTIMER            StatsTimer;
     WDFWORKITEM         StatsWorkItem;
     WDFWORKITEM         EnableWorkItem;
@@ -169,6 +170,8 @@ VOID MmStatsNoteBrbType(_In_ PDEVICE_CONTEXT Ctx, _In_ USHORT Type);
 /* stats.c */
 EVT_WDF_TIMER MmEvtStatsTimer;
 EVT_WDF_WORKITEM MmEvtStatsWorkItem;
+VOID MmLoadSettings(_In_ PDEVICE_CONTEXT Ctx);
+VOID MmMaybeReloadSettings(_In_ PDEVICE_CONTEXT Ctx);
 
 /* enable.c */
 EVT_WDF_WORKITEM MmEvtEnableWorkItem;

@@ -59,10 +59,11 @@ static VOID MmQueryULong(_In_ WDFKEY Key, _In_ PCWSTR Name, _Inout_ ULONG *Value
     }
 }
 
-static VOID MmLoadSettings(_In_ PDEVICE_CONTEXT Ctx)
+VOID MmLoadSettings(_In_ PDEVICE_CONTEXT Ctx)
 {
     MM_SETTINGS s;
     WDFKEY key;
+    ULONG gen = 0;
 
     PAGED_CODE();
 
@@ -79,17 +80,41 @@ static VOID MmLoadSettings(_In_ PDEVICE_CONTEXT Ctx)
         MmQueryULong(key, L"AxisLock",         &s.AxisLock);
         MmQueryULong(key, L"ScrollThreshold",  &s.ScrollThreshold);
         MmQueryULong(key, L"EnableMethod",     &s.EnableMethod);
+        MmQueryULong(key, L"SettingsGeneration", &gen);
         WdfRegistryClose(key);
     }
     MmSettingsClamp(&s);
 
     WdfSpinLockAcquire(Ctx->Lock);
     Ctx->Settings = s;
+    Ctx->SettingsGen = gen;
     WdfSpinLockRelease(Ctx->Lock);
 
     MMLOG("settings: middle=%lu zone=%lu scroll=%lu h=%lu natural=%lu speed=%lu accel=%lu inertia=%lu lock=%lu\n",
           s.MiddleClickMode, s.MiddleZoneWidth, s.ScrollEnabled, s.HorizontalScroll,
           s.NaturalScrolling, s.ScrollSpeed, s.Acceleration, s.Inertia, s.AxisLock);
+}
+
+/* Cheap periodic check: reload settings only when the apps bump SettingsGeneration,
+   so settings apply live without ever restarting the device. */
+VOID MmMaybeReloadSettings(_In_ PDEVICE_CONTEXT Ctx)
+{
+    WDFKEY key;
+    UNICODE_STRING name;
+    ULONG gen = 0;
+
+    PAGED_CODE();
+    if (!NT_SUCCESS(WdfDriverOpenParametersRegistryKey(WdfGetDriver(), KEY_READ,
+                                                       WDF_NO_OBJECT_ATTRIBUTES, &key))) {
+        return;
+    }
+    RtlInitUnicodeString(&name, L"SettingsGeneration");
+    (VOID)WdfRegistryQueryULong(key, &name, &gen);
+    WdfRegistryClose(key);
+
+    if ((LONG)gen != Ctx->SettingsGen) {
+        MmLoadSettings(Ctx);        /* updates Ctx->SettingsGen too */
+    }
 }
 
 /* ------------------------------------------------------------------------ */

@@ -30,7 +30,7 @@ UninstallDisplayName=Magic Mouse Driver
 SetupLogging=yes
 
 [Messages]
-WelcomeLabel2=This installs a driver that gives your Apple Magic Mouse scrolling (vertical and horizontal), momentum and a middle click on Windows.%n%nPair the mouse in Bluetooth settings before you continue.%n%nThe driver isn't signed by Microsoft, so Setup turns on Windows test-signing mode. Windows then shows "Test Mode" in a corner of the desktop. You'll need to restart at the end.
+WelcomeLabel2=This installs a driver that gives your Apple Magic Mouse scrolling (vertical and horizontal), momentum and a middle click on Windows.%n%nPair the mouse in Bluetooth settings before you continue.%n%nThe driver isn't signed by Microsoft, so Setup turns on Windows test-signing mode. Windows then shows "Test Mode" in a corner of the desktop. You'll need to restart at the end.%n%nIf you use Magic Utilities (or another Apple-device driver), turn your Apple keyboard off during this one-time install - the install briefly restarts the Bluetooth mouse, and some third-party drivers mishandle that.
 
 [Files]
 Source: "{#StageDir}\x64\*";   DestDir: "{app}\driver"; Flags: ignoreversion; Check: not IsArm64

@@ -23,14 +23,21 @@ VOID MmEvtStatsTimer(_In_ WDFTIMER Timer)
 {
     PDEVICE_CONTEXT ctx = MmGetContext(WdfTimerGetParentObject(Timer));
 
-    if (ctx->Stats.Version != ctx->StatsWritten) {
-        WdfWorkItemEnqueue(ctx->StatsWorkItem);
-    }
+    /* Fire every tick: the work item refreshes settings and writes stats. */
+    WdfWorkItemEnqueue(ctx->StatsWorkItem);
 }
 
 VOID MmEvtStatsWorkItem(_In_ WDFWORKITEM WorkItem)
 {
     PDEVICE_CONTEXT ctx = MmGetContext(WdfWorkItemGetParentObject(WorkItem));
+
+    /* Apply any settings change live - no device restart needed. */
+    MmMaybeReloadSettings(ctx);
+
+    /* Nothing new to write? skip the registry status update. */
+    if (ctx->Stats.Version == ctx->StatsWritten) {
+        return;
+    }
     MM_STATS *st = &ctx->Stats;
     WDFKEY params, status;
     UNICODE_STRING sub;

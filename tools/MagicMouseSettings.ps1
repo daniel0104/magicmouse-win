@@ -105,19 +105,9 @@ function Show-Settings($s) {
     $zoneVal.Text = "$($zone.Value)"; $speedVal.Text = "$($speed.Value)%"; $threshVal.Text = "$($thresh.Value)"
 }
 
-function Restart-Mice {
-    $mice = Get-PnpDevice -PresentOnly | Where-Object {
-        $_.InstanceId -match 'BTHENUM\\\{00001124-0000-1000-8000-00805F9B34FB\}_VID&(000205AC_PID&030D|0001004C_PID&0269|0001004C_PID&0323)'
-    }
-    foreach ($m in $mice) {
-        pnputil /restart-device "$($m.InstanceId)" | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            Disable-PnpDevice -InstanceId $m.InstanceId -Confirm:$false
-            Enable-PnpDevice -InstanceId $m.InstanceId -Confirm:$false
-        }
-    }
-    return @($mice).Count
-}
+# Settings apply live: the driver re-reads them within ~2 seconds when this
+# generation marker changes. We never restart the mouse device - a device
+# restart can disturb other Bluetooth drivers (e.g. Magic Utilities) on the box.
 
 $status = New-Object System.Windows.Forms.Label
 $status.AutoSize = $true; $status.ForeColor = [System.Drawing.Color]::DimGray
@@ -144,10 +134,8 @@ $apply.Add_Click({
     foreach ($k in $values.Keys) {
         New-ItemProperty -Path $key -Name $k -Value $values[$k] -PropertyType DWord -Force | Out-Null
     }
-    $form.Cursor = 'WaitCursor'; $status.Text = 'Restarting the mouse...'; $form.Refresh()
-    $n = Restart-Mice
-    $form.Cursor = 'Default'
-    $status.Text = if ($n -gt 0) { 'Saved. The mouse reconnects in a few seconds.' } else { 'Saved. Applies next time the mouse connects.' }
+    New-ItemProperty -Path $key -Name SettingsGeneration -Value ([int]((Get-Date).Ticks -band 0x7FFFFFFF)) -PropertyType DWord -Force | Out-Null
+    $status.Text = 'Saved. Applies within a couple of seconds - no restart needed.'
 })
 $reset.Add_Click({ Show-Settings $defaults; $status.Text = 'Defaults loaded - press Apply to save.' })
 $close.Add_Click({ $form.Close() })

@@ -80,6 +80,7 @@ HKR,Parameters,Inertia,         0x00010003, 1
 HKR,Parameters,AxisLock,        0x00010003, 1
 HKR,Parameters,ScrollThreshold, 0x00010003, 25
 HKR,Parameters,EnableMethod,    0x00010003, 1      ; 0 interrupt channel, 1 open own control channel
+HKR,Parameters,SettingsGeneration, 0x00010003, 0   ; bumped by the settings app; driver reloads settings live
 
 [MagicMouse_Inst.NT.Wdf]
 KmdfService = MagicMouseFlt, MagicMouseFlt_WdfSection

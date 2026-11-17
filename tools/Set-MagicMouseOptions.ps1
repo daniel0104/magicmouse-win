@@ -43,8 +43,7 @@ param(
     [ValidateRange(0, 1)]
     [int]$EnableMethod,
 
-    [switch]$Show,
-    [switch]$NoRestart
+    [switch]$Show
 )
 $ErrorActionPreference = 'Stop'
 
@@ -79,18 +78,10 @@ if ($Show -or -not $changed) {
     Write-Host 'MiddleClickMode: 0 = off, 1 = centre zone, 2 = two-finger, 3 = both'
 }
 
-if ($changed -and -not $NoRestart) {
-    # Settings are read when the device starts, so restart each Magic Mouse.
-    $mice = Get-PnpDevice -PresentOnly | Where-Object {
-        $_.InstanceId -match 'BTHENUM\\\{00001124-0000-1000-8000-00805F9B34FB\}_VID&(000205AC_PID&030D|0001004C_PID&0269|0001004C_PID&0323)'
-    }
-    foreach ($m in $mice) {
-        pnputil /restart-device "$($m.InstanceId)" | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            Disable-PnpDevice -InstanceId $m.InstanceId -Confirm:$false
-            Enable-PnpDevice  -InstanceId $m.InstanceId -Confirm:$false
-        }
-        Write-Host "Restarted $($m.FriendlyName)"
-    }
-    if (-not $mice) { Write-Host 'Saved. The mouse picks up the new settings next time it connects.' }
+if ($changed) {
+    # Settings apply live - the driver re-reads them within ~2 seconds. Bumping
+    # this value is the signal; we never restart the mouse device (a device
+    # restart can disturb other Bluetooth drivers on the system).
+    New-ItemProperty -Path $key -Name SettingsGeneration -Value ([int]((Get-Date).Ticks -band 0x7FFFFFFF)) -PropertyType DWord -Force | Out-Null
+    Write-Host 'Saved. The mouse picks up the change within a couple of seconds.'
 }

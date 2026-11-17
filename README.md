@@ -128,7 +128,11 @@ The values live in `HKLM\SYSTEM\CurrentControlSet\Services\MagicMouseFlt\Paramet
 | `AxisLock` | 1 | A clearly vertical or horizontal swipe is locked to that axis; diagonal swipes stay 2D |
 | `ScrollThreshold` | 25 | How far a finger must move before it scrolls. This stops fingers resting on the shell from scrolling. |
 
-If you edit the registry by hand, apply the change by turning the mouse off and on, or by running `pnputil /restart-device "<instance id>"`.
+Settings apply **live** — the driver re-reads them within about two seconds, with no device restart. (Changing a setting used to restart the mouse device, which could disturb other Bluetooth drivers on the system.) If you edit the registry by hand, bump `SettingsGeneration` to any new value to make the driver reload.
+
+### Running alongside Magic Utilities or other Apple-device drivers
+
+The driver never restarts the Bluetooth device during normal use (settings are live, and it re-arms multitouch on the existing connection). The one exception is the **one-time install**, which has to restart the mouse device once to attach the filter. Some third-party drivers — notably Magic Utilities' `MagicKeyboard.sys` — mishandle that brief Bluetooth disturbance and can bugcheck. If you have such a driver, turn your Apple keyboard **off** during the install (the installer reminds you). After install there are no further device restarts, so the two coexist cleanly.
 
 ## Using it
 
