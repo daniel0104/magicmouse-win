@@ -37,11 +37,15 @@ Supported models (Bluetooth):
 ```
 
 1. The filter sits under the in-box Bluetooth HID driver, which is the same place Apple's Boot Camp driver sits. It sees every L2CAP packet as a Bluetooth Request Block (BRB).
-2. It tracks the HID control and interrupt channels. On connect, and again whenever it sees legacy reports, it sends the `SET_REPORT(Feature)` that switches the mouse into multitouch mode (`D7 01` for the first-gen mouse, `F1 02 01` for Magic Mouse 2/USB-C), the same packet macOS and Linux send.
-3. It takes the multitouch reports off the interrupt channel before HidBth sees them. A gesture engine (`src/gesture.c`) turns them into a standard HID mouse report with buttons, X/Y, Wheel and AC Pan. That report goes to Windows through a virtual HID device created with VHF. Its report descriptor has Resolution Multipliers, so Windows turns on hi-res scrolling for both axes.
-4. Everything else (battery, other reports) passes through unchanged. If anything fails during setup (VHF, the Bluetooth interface), the filter becomes a pure pass-through and the mouse works exactly as it did without the driver.
+2. **Finding the control channel.** The enable command must go on the mouse's HID *control* channel, but on the 2024 USB-C model that channel is never opened through the filter, and a second one can't be opened (the device rejects it). So the filter "baits" it: it opens the mouse's own HID collection and issues a feature read (`GET_REPORT` of report `0x55`). That makes HidBth transact on its control channel, and the filter records the channel handle from that traffic.
+3. **Enabling multitouch.** On the learned control channel the filter sends the raw `SET_REPORT(Feature)` that switches the mouse into multitouch mode (`D7 01` for the first-gen mouse, `F1 02 01` for Magic Mouse 2 / USB-C) — the same bytes macOS and Linux send. Sending it raw on L2CAP is necessary because that report isn't in the descriptor Windows parsed, so the normal HID path would reject it.
+4. **Reading the full reports.** HidBth sizes its read buffer to the 8-byte boot mouse report, which would truncate the longer multitouch reports (`14 + 8·N` bytes). The filter substitutes its own larger read buffer so the whole report arrives, then copies back only what fits into HidBth's buffer for anything it passes through.
+5. The multitouch reports are taken off the interrupt channel before HidBth sees them. A gesture engine (`src/gesture.c`) turns them into a standard HID mouse report with buttons, X/Y, Wheel and AC Pan, sent to Windows through a virtual HID device created with VHF. Its descriptor has Resolution Multipliers, so Windows turns on hi-res scrolling for both axes.
+6. Everything else (battery, other reports) passes through unchanged. If anything fails during setup (VHF, the Bluetooth interface), the filter becomes a pure pass-through and the mouse works exactly as it did without the driver.
 
-The report formats come from the Linux `hid-magicmouse` driver.
+The report formats and enable sequences come from the Linux `hid-magicmouse` driver. Confirmed working on the 2024 USB-C Magic Mouse (`PID 0323`) over Bluetooth.
+
+If scrolling ever stops after re-pairing or a long sleep, open **Magic Mouse Settings** or re-run the installer's **Repair** shortcut; the driver re-arms multitouch on its own when it sees the mouse fall back to plain reports.
 
 ## Install with Setup.exe (no build needed)
 
